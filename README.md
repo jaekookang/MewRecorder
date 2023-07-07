@@ -43,7 +43,7 @@ You can download and install a standalone compiled app from here:
 
 - For Windows only: [MewRecorder_installer.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/EdBz8q17uFJOpks6ysuLr4IBz4YFsLuTm_21nVLe60RUnw?e=ZWGflK) 
 
-This installer includes all dependencies (e.g., ffmpeg). 
+This installer will automatically download and install all required dependencies (you don't need to download ffmpeg). 
 
 During installation, check "Add shortcut to desktop". 
 
