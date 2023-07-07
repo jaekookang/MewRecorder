@@ -26,7 +26,7 @@ Needs to dedicate at least 5GB to EchoWave.
 ##### Steps:
 1. Download all the files from this distribution and put them in a folder. 
 2. Download a redistributed FFMPEG release in zip file from here and put it in the same folder (do not unzip):
-   For Windows only: [ffmpeg.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/Ec0_HMhojDFCvtdyo0AjN8wBfkx9LccKPOwctLRuKnLWGQ?e=bB5M37) 
+  - For Windows only: [ffmpeg.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/Ec0_HMhojDFCvtdyo0AjN8wBfkx9LccKPOwctLRuKnLWGQ?e=bB5M37) 
 ------------------------------------------
 ### RUN
 1. Run EchoWave II in Administraion first.
@@ -38,10 +38,15 @@ Needs to dedicate at least 5GB to EchoWave.
      
 ### Alternative method (standalone app):
 (MATLAB is not required)
+
 You can download and install a standalone compiled app from here:
-For Windows only: [MewRecorder_installer.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/EdBz8q17uFJOpks6ysuLr4IBz4YFsLuTm_21nVLe60RUnw?e=ZWGflK) 
+
+- For Windows only: [MewRecorder_installer.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/EdBz8q17uFJOpks6ysuLr4IBz4YFsLuTm_21nVLe60RUnw?e=ZWGflK) 
+
 This installer includes all dependencies (e.g., ffmpeg). 
+
 During installation, check "Add shortcut to desktop". 
+
 After installation, right-click on the icon of MewRecorder and click "Run as administrator". 
 
 ### COPYRIGHT, LICENSE & DISCLAIMER
