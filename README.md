@@ -48,7 +48,16 @@ This installer includes all dependencies (e.g., ffmpeg).
 During installation, check "Add shortcut to desktop". 
 
 After installation, right-click on the icon of MewRecorder and click "Run as administrator". 
+### Recording
+- The cable connected to the synchronization port on the Telemed machine must be plugged into the second channel of audio inputs (to the PC).
+- 
+### Post-processing
+- After recording, ultrasound video will be stored in Telemed native format .tvd file (no audio) and audio in .wav file in the current folder. 
+- To combine ultrasound video and audio and convert it to MP4: 
+.Tools -> Convert all TVD to MP4
 
+###
+--------------------------------
 ### COPYRIGHT, LICENSE & DISCLAIMER
 Copyright (C) 2020 Wei-Rong Chen <wei-rong.chen[AT]yale.edu>  
 This program is free software under GNU General Public License, version 3.  
