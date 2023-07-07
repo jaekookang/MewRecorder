@@ -27,6 +27,7 @@ Needs to dedicate at least 5GB to EchoWave.
 1. Download all the files from this distribution and put them in a folder. 
 2. Download a redistributed FFMPEG release in zip file from here and put it in the same folder (do not unzip):
   - For Windows only: [ffmpeg.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/Ec0_HMhojDFCvtdyo0AjN8wBfkx9LccKPOwctLRuKnLWGQ?e=bB5M37) 
+(ffmpeg release source: gyan.dev/ffmpeg/builds)
 ------------------------------------------
 ### RUN
 1. Run EchoWave II in Administraion first.
