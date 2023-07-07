@@ -5,11 +5,13 @@ v1.0.4
 
 Latest update: 07JUL2023
 
-<p align="center"><img src="./Screenshots/MWR_main-screen.png" width="550"></p>
+<p align="center"><img src="./Screenshots/MWR_main-screen.png" width="450"></p>
 
 - "MewRecorder" is a MATLAB-based application for recording video and audio simultaneously on Telemed ultrasound machine (e.g., MicrUs Ext).
 - It requires installation/running of EchoWave II software from Telemed.
 - This app controls EchoWave to record ultrasound video and uses MATLAB to record audio.
+- If you de-select "Record Telemed Ultrasound", then this app also serves as an audio recorder.
+- The time stamps of recoding will be automatically logged.  
 ------------------------------------------
 ### INSTALLATION
 ##### Requirements:
