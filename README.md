@@ -30,8 +30,8 @@ Needs to dedicate at least 5GB to EchoWave.
 (ffmpeg release source: gyan.dev/ffmpeg/builds)
 ------------------------------------------
 ### RUN
-1. Run EchoWave II in Administraion first.
-2. Run MATLAB. To control EchoWave, you must run MATLAB in Administration mode. 
+1. Run EchoWave II in Administrator first.
+2. Run MATLAB. To control EchoWave, you must run MATLAB in Administrator mode. 
 
 - In MATLAB command window, type:
      >> cd ./MewRecorder  % [change this to your installation folder]  
