@@ -50,11 +50,15 @@ During installation, check "Add shortcut to desktop".
 After installation, right-click on the icon of MewRecorder and click "Run as administrator". 
 ### Recording
 - The cable connected to the synchronization port on the Telemed machine must be plugged into the second channel of audio inputs (to the PC).
-- 
+
 ### Post-processing
 - After recording, ultrasound video will be stored in Telemed native format .tvd file (no audio) and audio in .wav file in the current folder. 
 - To combine ultrasound video and audio and convert it to MP4: 
-.Tools -> Convert all TVD to MP4
+- Tools -> Convert all TVD to MP4
+  
+Before the conversion, remember to max out the screen resolution of EchoWave software and set MP4 bit rate to > 8000 Kbps.
+
+The convsertion will take a long time. 
 
 ###
 --------------------------------
