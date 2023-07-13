@@ -1,9 +1,9 @@
 # MewRecorder
 Video/Audio recorder for Telemed ultrasound machine. 
 
-v1.0.5
+v1.0.6
 
-Latest update: 07JUL2023
+Latest update: 13JUL2023
 
 <p align="center"><img src="./Screenshots/MWR_main-screen.png" width="450"></p>
 
