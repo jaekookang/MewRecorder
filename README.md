@@ -44,7 +44,7 @@ Needs to dedicate at least 5GB to EchoWave.
 
 You can download and install a standalone compiled app from here:
 
-- For Windows only: [MewRecorder_installer.zip]([https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/EdBz8q17uFJOpks6ysuLr4IBz4YFsLuTm_21nVLe60RUnw?e=ZWGflK](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/EdbM5b1IBkVFvIRs2wmOmdoBl0WLy9RQf__kvFGOcbZdtA?e=nI8nNb)) 
+- For Windows only: [MewRecorder_installer.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/EdbM5b1IBkVFvIRs2wmOmdoBl0WLy9RQf__kvFGOcbZdtA?e=5bPeY9) 
 
 This installer will automatically download and install all required dependencies (you don't need to download ffmpeg). 
 
