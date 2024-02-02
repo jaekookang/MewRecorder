@@ -1,9 +1,9 @@
 # MewRecorder
 Video/Audio recorder for Telemed ultrasound machine. 
 
-v1.1
+v1.2
 
-Latest update: 30JAN2024
+Latest update: 02FEB2024
 
 <p align="center"><img src="./Screenshots/MWR_main-screen.png" width="450"></p>
 
@@ -27,8 +27,11 @@ Needs to dedicate at least 5GB to EchoWave.
 
 ##### Steps:
 1. Download all the files from this distribution and put them in a folder. 
-2. Download a redistributed FFMPEG release in zip file from here and put it in the same folder (do not unzip):
-  - For Windows only: [ffmpeg.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/Ec0_HMhojDFCvtdyo0AjN8wBfkx9LccKPOwctLRuKnLWGQ?e=bB5M37) 
+2. Install FFMPEG:
+   - Download a redistributed FFMPEG release from https://ffmpeg.org and unzip it to a folder in local disk drive. 
+   - Add {your local disk drive path to ffmpeg}/ffmpeg/bin/ path to OS system path
+   - e.g., In Windows, Settings->System->About->Advanced system settings->Advanced->Environment Variables->System variables->Path->Edit->New-> C:\ffmpeg\bin (depending on your own path)
+   
 (ffmpeg release source: gyan.dev/ffmpeg/builds)
 ------------------------------------------
 ### RUN
@@ -46,9 +49,11 @@ You can download and install a standalone compiled app from here:
 
 - For Windows only: [MewRecorder_installer.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/EdbM5b1IBkVFvIRs2wmOmdoBl0WLy9RQf__kvFGOcbZdtA?e=5bPeY9) 
 
-This installer will automatically download and install all required dependencies (you don't need to download ffmpeg). 
+This installer will automatically download and install all required dependencies.
 
 During installation, check "Add shortcut to desktop". 
+
+*** Then Install FFMPEG as described above. 
 
 After installation, right-click on the icon of MewRecorder and click "Run as administrator". 
 ### Recording
