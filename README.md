@@ -15,10 +15,17 @@ Latest update: 13MAR2024
 ------------------------------------------
 ### INSTALLATION
 ##### Requirements:
+
+- Telemed EchoWave II 
+Download and Install the latest EchoWave II from the official Telemed website (telemedultrasound.com).
 Current Telemed ultrasound machine only supports Windows PC. 
 A faster PC running Windows 10 or 11 is recommended. 
-Minimum system RAM requirements: > 16GB (64GB is preferred.) 
-Needs to dedicate at least 5GB to EchoWave. 
+Minimum system RAM requirements: > 16GB (64GB is preferred.)
+After installing EchoWave II, you need to do two things once for each new computer:
+1. Register "AutoInt1Client.dll"
+   Open a CMD window with administrator’s right. Then navigate to the "Plugins" folder in the EchoWave path (e.g., C:\Program Files\Telemed\Echo Wave II Application\EchoWave II\Config\Plugins) by using the “cd” command.  Once there, type “AutoInt1_regasm.bat” to execute the batch file. 
+
+2. Run Each Wave II.  In the EachoWave II configuration window, dedicate at least 5GB RAM to EchoWave. 
 (EchoWave -> Menu -> Customize -> Scanning Control -> Cine -> Cine Size:  Change this value to at least 5000 MB. The more the better but do not max out.)
 
 - MATLAB:
