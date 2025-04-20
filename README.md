@@ -26,7 +26,7 @@ After installing EchoWave II, you need to do two things once for each new comput
 1. Register "AutoInt1Client.dll"
    Open a CMD window with administrator’s right. Then navigate to the "Plugins" folder in the EchoWave path (e.g., C:\Program Files\Telemed\Echo Wave II Application\EchoWave II\Config\Plugins) by using the “cd” command.  Once there, type “AutoInt1_regasm.bat” to execute the batch file. 
 
-2. Run Each Wave II.  In the EachoWave II configuration window, dedicate at least 5GB RAM to EchoWave. 
+2. Run Echo Wave II.  In the EachoWave II configuration window, dedicate at least 5GB RAM to EchoWave. 
 (EchoWave -> Menu -> Customize -> Scanning Control -> Cine -> Cine Size:  Change this value to at least 5000 MB. The more the better but do not max out.)
 
 - MATLAB:
