@@ -26,8 +26,8 @@ After installing EchoWave II, you need to do two things once for each new comput
 1. Register "AutoInt1Client.dll"
    Open a CMD window with administrator’s right. Then navigate to the "Plugins" folder in the EchoWave path (e.g., C:\Program Files\Telemed\Echo Wave II Application\EchoWave II\Config\Plugins) by using the “cd” command.  Once there, type “AutoInt1_regasm.bat” to execute the batch file. 
 
-2. Run Echo Wave II.  In the EachoWave II configuration window, dedicate at least 5GB RAM to EchoWave. 
-(EchoWave -> Menu -> Customize -> Scanning Control -> Cine -> Cine Size:  Change this value to at least 5000 MB. The more the better but do not max out.)
+2. Run EchoWave II.  In the EachoWave II configuration window, dedicate at least 5GB RAM to EchoWave. 
+EchoWave -> Menu -> Customize -> Scanning Control -> Cine -> Cine Size:  Change this value to at least 5000 MB (preferrably > 10000 MB). The more the better but do not max out (leave some RAM for the system).
 
 - MATLAB:
 -   R2022b or newer
@@ -55,7 +55,7 @@ After installing EchoWave II, you need to do two things once for each new comput
 
 You can download and install a standalone compiled app from here:
 
-- For Windows only: [MewRecorder_installer.zip](https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/EeV_FBYzfTBIkzPBcC8BX60B8bI-TjZC0q0kRZqi8I5v0A?e=dLtlnr)
+- For Windows only: [MewRecorder_installer.zip]([https://yaleedu-my.sharepoint.com/:u:/g/personal/wei-rong_chen_yale_edu/EeV_FBYzfTBIkzPBcC8BX60B8bI-TjZC0q0kRZqi8I5v0A?e=dLtlnr](https://1drv.ms/u/s!AseHGSjeaA-2tnReFKTHJEXJB2SN?e=R0v6yB))
 
 This installer will automatically download and install all required dependencies.
 
@@ -70,6 +70,8 @@ After installation, right-click on the icon of MewRecorder and click "Run as adm
 ### Post-processing
 - After recording, ultrasound video will be stored in Telemed native format .tvd file (no audio) and audio in .wav file in the current folder. 
 - To combine ultrasound video and audio and convert it to MP4: Tools -> Convert all TVD to MP4
+- When converting TVD to MP4, EchoWave II must be running.
+- Note that EchoWave II 4.2 allows for running without connecting to Telemed ultrasound machine, while Echowave II 4.3 does not.
   
 Before the conversion, remember to max out the screen resolution of EchoWave software and set MP4 bit rate to > 8000 Kbps.
 
