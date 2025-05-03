@@ -56,7 +56,7 @@ EchoWave -> Menu -> Customize -> Scanning Control -> Cine -> Cine Size:  Change 
 You can download and install a standalone compiled app from here:
 
 - For Windows only: 
-<a href="[http://example.com/](https://1drv.ms/u/s!AseHGSjeaA-2tnReFKTHJEXJB2SN?e=b4Yw6j)" target="_blank">MewRecorder_installer.zip</a>
+<a href="https://1drv.ms/u/s!AseHGSjeaA-2tnReFKTHJEXJB2SN?e=b4Yw6j" target="_blank">MewRecorder_installer.zip</a>
 This installer will automatically download and install all required dependencies.
 
 During installation, check "Add shortcut to desktop". 
