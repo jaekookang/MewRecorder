@@ -1,9 +1,8 @@
 # MewRecorder
 Video/Audio recorder for Telemed ultrasound machine. 
 
-v1.2.4
-
-Latest update: 13MAR2024
+v1.2.4 updated: 13MAR2024
+v1.3 updated: 22AUG2025  Supports up to 4 audio channels.
 
 <p align="center"><img src="./Screenshots/MWR_main-screen.png" width="450"></p>
 
