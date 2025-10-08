@@ -4,6 +4,9 @@ Video/Audio recorder for Telemed ultrasound machine.
 v1.2.4 updated: 13MAR2024
 
 v1.3 updated: 22AUG2025  Supports up to 4 audio channels.
+v1.3.1 updated: 08OCT2025
+- jkang, added status message for audio_dev_idx and audio_dev_name
+
 
 <p align="center"><img src="./Screenshots/MWR_main-screen.png" width="450"></p>
 
