@@ -1,0 +1,74 @@
+# ===================================
+# MATLAB build and compiler outputs
+# ===================================
+#*.exe
+*.dll
+*.log
+*.json
+*.txt
+*.prj
+*.ctf
+*.pkg
+*.manifest
+*.mlappinstall
+
+# Compiler build folders
+for_testing/
+for_redistribution*/
+#compiled_*/
+build/
+codegen/
+slprj/
+work/
+tmp/
+matlabroot/
+mccExcludedFiles.log
+
+# ===================================
+# MATLAB autosave and backup files
+# ===================================
+*.asv
+*.autosave
+*.bak
+*.old
+*.orig
+
+# ===================================
+# OS-specific files
+# ===================================
+# macOS
+.DS_Store
+.AppleDouble
+._*
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+# Linux
+*~
+
+# ===================================
+# IDE and editor files
+# ===================================
+# VS Code
+.vscode/
+# MATLAB editor settings
+.matlab/
+*.m~
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+# JetBrains
+.idea/
+
+# ===================================
+# Other generated or user-local files
+# ===================================
+*.zip
+*.tar
+*.gz
+*.7z
+*.bak
+*.tmp
+*.swp
+*.lock

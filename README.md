@@ -6,14 +6,15 @@ v1.2.4 updated: 13MAR2024
 v1.3 updated: 22AUG2025  Supports up to 4 audio channels.
 v1.3.1 updated: 08OCT2025
 - jkang, added status message for audio_dev_idx and audio_dev_name
+- jkang, added OptiTrack to be recorded simultaneously using two SDKs 
+- jkang, TODO: add sync signal for OptiTrack & validate data
 
+<p align='center'><img src='./Screenshots/MWR_main-screen.png' width='450'></p>
 
-<p align="center"><img src="./Screenshots/MWR_main-screen.png" width="450"></p>
-
-- "MewRecorder" is a MATLAB-based application for recording video and audio simultaneously on Telemed ultrasound machine (e.g., MicrUs Ext).
+- 'MewRecorder' is a MATLAB-based application for recording video and audio simultaneously on Telemed ultrasound machine (e.g., MicrUs Ext).
 - It requires installation/running of EchoWave II software from Telemed.
 - This app controls EchoWave to record ultrasound video and uses MATLAB to record audio.
-- If you de-select "Record Telemed Ultrasound", then this app also serves as an audio recorder.
+- If you de-select 'Record Telemed Ultrasound', then this app also serves as an audio recorder.
 - The time stamps of recoding will be automatically logged.  
 ------------------------------------------
 ### INSTALLATION
@@ -26,8 +27,8 @@ A faster PC running Windows 10 or 11 is recommended.
 Minimum system RAM requirements: > 16GB (64GB is preferred).
 
 After installing EchoWave II, you need to do two things once for each new computer:
-1. Register "AutoInt1Client.dll"
-   Open a CMD window with administrator’s right. Then navigate to the "Plugins" folder in the EchoWave path (e.g., C:\Program Files\Telemed\Echo Wave II Application\EchoWave II\Config\Plugins) by using the “cd” command.  Once there, type “AutoInt1_regasm.bat” to execute the batch file. 
+1. Register 'AutoInt1Client.dll'
+   Open a CMD window with administrator’s right. Then navigate to the 'Plugins' folder in the EchoWave path (e.g., C:\Program Files\Telemed\Echo Wave II Application\EchoWave II\Config\Plugins) by using the “cd” command.  Once there, type “AutoInt1_regasm.bat” to execute the batch file. 
 
 2. Run EchoWave II.  In the EachoWave II configuration window, dedicate at least 5GB RAM to EchoWave. 
 EchoWave -> Menu -> Customize -> Scanning Control -> Cine -> Cine Size:  Change this value to at least 5000 MB (preferrably > 10000 MB). The more the better but do not max out (leave some RAM for the system).
@@ -58,15 +59,15 @@ EchoWave -> Menu -> Customize -> Scanning Control -> Cine -> Cine Size:  Change 
 
 You can download and install a standalone compiled app from here:
 
-- For Windows only: <a href="https://1drv.ms/u/c/b60f68de281987c7/EceHGSjeaA8ggLZ0GwAAAAABsQrEy-5-7jKsT-5AdehY2Q?e=HDxKRU" target="_blank">MewRecorder_installer.zip</a>
+- For Windows only: <a href='https://1drv.ms/u/c/b60f68de281987c7/EceHGSjeaA8ggLZ0GwAAAAABsQrEy-5-7jKsT-5AdehY2Q?e=HDxKRU' target='_blank'>MewRecorder_installer.zip</a>
 
 This installer will automatically download and install all required dependencies.
 
-During installation, check "Add shortcut to desktop". 
+During installation, check 'Add shortcut to desktop'. 
 
 *** Then Install FFMPEG as described above. 
 
-After installation, right-click on the icon of MewRecorder and click "Run as administrator". 
+After installation, right-click on the icon of MewRecorder and click 'Run as administrator'. 
 ### Recording
 - The cable connected to the synchronization port on the Telemed machine must be plugged into the second channel of audio inputs (to the PC).
 
