@@ -1,0 +1,25 @@
+[11:15:16] === MewRecorder started ===
+
+[11:15:19] Running deployed. ctfroot = C:\Users\Boram Kim\AppData\Local\MathWorks\MatlabRuntimeCache\R2025b\MewRec2
+
+[11:15:21] Ready.
+
+[11:15:21] AudioDevIdx: 2
+AudioDevName: Analogue 1 + 2 (Focusrite USB Audio) (Windows DirectSound)
+
+[11:15:35] Ready.
+
+[11:15:35] AudioDevIdx: 2
+AudioDevName: Analogue 1 + 2 (Focusrite USB Audio) (Windows DirectSound)
+
+[11:15:36] ✅ Motive is running and ready for OptiTrack recording.
+
+[11:15:38] ----------------------------
+
+[11:15:38] New recording session started
+
+[11:15:38] Recording...
+
+[11:15:43] ❌ OptiTrack init error: Message: Could not load file or assembly 'file:///C:\Users\Boram Kim\AppData\Local\MathWorks\MatlabRuntimeCache\R2025b\MewRec2\NatNetML.dll' or one of its dependencies. Operation is not supported. (Exception from HRESULT: 0x80131515)
+Source: mscorlib
+HelpLink: None

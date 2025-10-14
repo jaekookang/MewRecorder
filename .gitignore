@@ -2,10 +2,10 @@
 # MATLAB build and compiler outputs
 # ===================================
 #*.exe
-*.dll
+#*.dll
 *.log
 *.json
-*.txt
+#*.txt
 *.prj
 *.ctf
 *.pkg
@@ -15,7 +15,7 @@
 # Compiler build folders
 for_testing/
 for_redistribution*/
-#compiled_*/
+compiled_*/
 build/
 codegen/
 slprj/

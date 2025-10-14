@@ -1,0 +1,1862 @@
+mcc -m -W WinMain:MewRecorder -T link:exe MewRecorder.mlapp ...
+    -a "C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.dll" ...
+    -a "C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNetSDK\Samples\Matlab\natnet.p" ...
+    -d "compiled_251013"
+
+
+
+====
+
+
+classdef MewRecorder < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                  matlab.ui.Figure
+        Mn_Setting                matlab.ui.container.Menu
+        Mn_SetMaxTimeOut          matlab.ui.container.Menu
+        Mn_SelectAudioDevice      matlab.ui.container.Menu
+        Mn_AudioSettings          matlab.ui.container.Menu
+        Mn_Tools                  matlab.ui.container.Menu
+        Mn_ConvertTVDtoMP4viaAVI  matlab.ui.container.Menu
+        Mn_LoadEchoWavePreset     matlab.ui.container.Menu
+        Mn_Info                   matlab.ui.container.Menu
+        Mn_AudioInfo              matlab.ui.container.Menu
+        Mn_CheckFFMPEG            matlab.ui.container.Menu
+        Mn_About                  matlab.ui.container.Menu
+        Ck_ifRecordOptitrack      matlab.ui.control.CheckBox
+        Pn_Msg_AudioDevice        matlab.ui.control.HTML
+        Lp_AudSig1                matlab.ui.control.Lamp
+        Lp_AudSig2                matlab.ui.control.Lamp
+        Lp_AudSig3                matlab.ui.control.Lamp
+        Lp_AudSig4                matlab.ui.control.Lamp
+        Bn_Record                 matlab.ui.control.StateButton
+        Lb_AudioSettings          matlab.ui.control.Label
+        Ck_ifRecordTelemed        matlab.ui.control.CheckBox
+        Ed_RecordDur              matlab.ui.control.NumericEditField
+        Ck_RecordByDur            matlab.ui.control.CheckBox
+        Lb_MaxTimeOut             matlab.ui.control.Label
+        CurrentfolderLabel        matlab.ui.control.Label
+        Bn_SelectOutputFolder     matlab.ui.control.Button
+        Ck_ifNormAudio            matlab.ui.control.CheckBox
+        Ed_TimeRecorded           matlab.ui.control.EditField
+        TimeRecordedLabel         matlab.ui.control.Label
+        Pn_MsgBox                 matlab.ui.container.Panel
+        Msg1                      matlab.ui.control.HTML
+        Bn_Stop                   matlab.ui.control.Button
+        Pn_Filename               matlab.ui.container.Panel
+        Ed_Annotate               matlab.ui.control.EditField
+        AnnotateEditFieldLabel    matlab.ui.control.Label
+        Ed_Filename               matlab.ui.control.EditField
+        FilenameLabel             matlab.ui.control.Label
+        Ck_AppendTime             matlab.ui.control.CheckBox
+        Ck_AppendDate             matlab.ui.control.CheckBox
+        Ed_FilePrefix             matlab.ui.control.EditField
+        FilenameprefixLabel       matlab.ui.control.Label
+    end
+
+    
+    properties (Access = private)
+        AppName = 'MewRecorder';
+        Version = '1.3'; Update = '22AUG2025';  % Update version
+        minMatlabVer = '9.13'; % R2022b
+        minMatlabVerName = 'R2022b'; 
+        logFilename = '_MewRecorder.log';
+        status = 'inactive'; % status: inactive, ready, busy
+        flag_busy = false;
+        maxTimeOut = 7200; % max time out in seconds. 
+        isRecording = false; % flag for recoding status
+        ifProbeConnected = false; 
+        ffmpegFilename = 'ffmpeg.zip'; ffmpegFound = false; ffmpegFullPathFilename = ''; ffmpegVersion = '';
+        OutputPath = pwd; appPath = []; appInstalledPath = [];
+        appStartUpTime = []; recordStartTime = []; recordStopTime = [];  recordStartTimeStr = ''; recordStopTimeStr = ''
+        audioExt = '.wav'; tvdExt = '.tvd';
+        audio_dev_idx = 2; audio_dev_name ='';   % Default audio device = 0
+        audio_srate = 44100;  num_audio_channels = 2;  audio_bit_rate = 16; 
+        max_audio_sig_lamps = 3; % max # of lamps shown in the audio panel        
+        recordingTimer = []; timerPeriod = 0.070;      
+        save_file_prefix = ''; FullPathFilename = ''; AudioFullPathFilename = ''; TvdFullPathFilename = ''; 
+        audioRecObj = []; asmcmd = []; EchoWavePath = []; EchoWaveCmd = [];
+        dateFormat = 'yyyy-MM-dd'; timeFormat = 'HH-mm-ss-SSS';
+        tmpFolder = '_mwr_tmp_mwr'; tmpFile = '_mwr_tmp_mwr_test.txt';
+        %% For Boram's Voicelab setting ONLY
+        which_channel_is_telemed_sync = 3; 
+        which_channel_is_optitrack_sync = 3;
+        audioReader      % audioDeviceReader handle (if used)
+        audioData        % buffered samples (for WASAPI)
+        audioTimer       % background timer (for WASAPI)
+        useAudioDeviceReader logical = false; % tracks which system is active
+
+        %% Telemed ID:
+        id_scanning_state_set = 201; id_scanning_state_get = 200;
+        id_state_b_b1r = 1; % B-mode scan running
+        id_state_b_b1f = 2;  % B-mode frozen
+        %% OptiTrack (NatNet) properties
+        natnet_dll_path = '';     % Full path to NatNetML.dll
+        natnet_client = [];       % NatNet client handle
+        optitrack_localIP = '127.0.0.1';
+        optitrack_serverIP = '127.0.0.1';
+        optitrack_pollRate = 100; % Hz
+        optitrack_data = struct('time', {}, 'markers', {});
+        optitrack_timer = [];
+        optitrack_recording = false;
+        optitrack_filename = '';
+        motiveTrigger = struct('start', [], 'stop', []);  % timestamps for Motive TTL trigger events
+
+        %% colors:
+        hasSignalColor = [1, 0, 0];
+        noSignalColor = [0, 0, 0];
+    end
+    
+    methods (Access = private)
+       %%
+       function [success, msg] = initialize(app)
+            clc;
+            success = true; msg = '';  msg1 = ''; msg2 = ''; msg3 = '';
+            app.Mn_ConvertTVDtoMP4viaAVI.UserData.toFormat = 'avi_comp';
+            if ~app.isAdminPC, toggleEchoWaveFunctions(app, 'off');end
+            %% Init EchoWave:                       
+            if app.Ck_ifRecordTelemed.Value              
+                [success, msg1] = DetectEchoWave(app); 
+                if success && app.ifProbeConnected, EchoWaveFreeze(app);end
+            end 
+            %% Initialize audio device: 
+            if success
+                [success, msg2] = selectAudioDevice(app, app.audio_dev_idx);
+            end
+            if success
+                [success, msg3] = CheckIfAudioDeviceSettingSupported(app);
+            end 
+            % %% If not success:
+            msg = sprintf('%s %s %s', msg1, msg2, msg3);
+            if success
+                appSetStatus(app, 'ready');
+                app.logMessage(msg, 'info');
+            else
+                appSetStatus(app, 'inactive');
+                app.logMessage(msg, 'error');
+                return;
+            end
+
+       end %initialize
+       %% 
+       function [success, msg] = CheckOutputFolderAccess(app, folderPath)
+           if nargin < 2 || isempty(folderPath), folderPath = app.OutputPath;end
+           tmpFileFullPath = fullfile(folderPath, app.tmpFile);
+           fid = -1; success = false;
+           [fid, msg]=fopen(tmpFileFullPath,'w');
+           if fid < 0
+               success = false;  msg = 'Folder access denied';
+           else
+               fclose(fid); delete(tmpFileFullPath); success = true;
+           end
+       end %CheckOutputFolderAccess
+       %%
+        function EchoWaveStartRecord(app)
+            % freeze ultrasound scanning
+            % if (app.asmcmd.IsRunState() == 1), app.asmcmd.FreezeRun(); end
+            % % pause cine playback
+            % if (app.asmcmd.IsPlayState() == 1), app.asmcmd.PlayPause(); end
+            %Start recording:
+           app.asmcmd.ParamSet(app.id_scanning_state_set, app.id_state_b_b1r); % B-mode scan running
+        end %EchoWaveStartRecord(asmcmd)
+        %%
+        function EchoWaveStopAndSave(app)
+            % id_scanning_state_set = 201; id_scanning_state_get = 200;
+            % id_state_b_b1r = 1; % B-mode scan running
+            % id_state_b_b1f = 2;  % B-mode frozen
+            saveCineCmd = [app.EchoWaveCmd ' -save_cine tvd "' app.TvdFullPathFilename '"']; % must specify absolute path for the output  file.
+            % stop recording
+            % if (app.asmcmd.IsRecordingState() == 1), app.asmcmd.RecordStop(); end
+            % freeze ultrasound scanning
+            EchoWaveFreeze(app);
+            % pause cine playback
+            % if (app.asmcmd.IsPlayState() == 1), app.asmcmd.PlayPause(); end
+            % save TVD file
+            [status,cmdout] = system(saveCineCmd, '-echo');  % It roughly takes 1 s to save 5 s video; takes 5 s to save 5 min video.
+            % tic
+            % nFrames = app.asmcmd.GetFramesCount();
+            % toc
+        end %EchoWaveStopRecordAndSave()  
+
+        %% ======= OptiTrack Functions =======
+        function [success, msg] = InitOptiTrack(app)
+            success = false; 
+            msg = '';
+        
+            try
+                % === 1. Determine NatNet wrapper path ===
+                % See: C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNet_SDK_3.1\NatNetSDK\Samples\Matlab
+                relWrapper = fullfile('NatNet_SDK_4.3','NatNet_SDK_3.1','NatNetSDK','Samples','Matlab'); % path for natnet.p
+        
+                if isdeployed
+                    % ctfroot points to "C:\Users\Boram Kim\AppData\Local\MathWorks\MatlabRuntimeCache\R2025b\MewRec13"
+                    % but libraries exist under MewRecoder
+                    wrapperPath = fullfile(ctfroot, 'MewRecorder', relWrapper);
+                else
+                    wrapperPath = fullfile('C:\Users','Boram Kim','GitHub','MewRecorder',relWrapper);
+                end
+        
+                % === Normalize safely (handle spaces) ===
+                wrapperPath = char(java.io.File(wrapperPath).getCanonicalPath());  % keep as char, not string
+        
+                if exist(wrapperPath, 'dir')
+                    if ~contains(path, wrapperPath)
+                        addpath(wrapperPath);
+                        app.logMessage(['[MewRecorder] Added NatNet wrapper path: ', wrapperPath]);
+                    end
+                else
+                    app.logMessage(sprintf('NatNet wrapper path not found: %s', wrapperPath), 'error');
+                end
+        
+                % === 2. Load NatNet .NET assembly ===
+                dllFile = app.getNatNetDLLPath();
+                if ~libisloaded('NatNetML')
+                    NET.addAssembly(dllFile);
+                end
+                
+                
+                % === 3. Initialize NatNet client ===
+                app.natnet_client = natnet();  % natnet.p must be on path
+                app.natnet_client.HostIP = app.optitrack_serverIP;
+                app.natnet_client.ClientIP = app.optitrack_localIP;
+                app.natnet_client.connect();
+        
+                success = true;
+                msg = '✅ OptiTrack natnet client connected.';
+            catch ME
+                msg = sprintf('❌ OptiTrack init error: %s', ME.message);
+                warning(msg);
+            end
+        end
+
+
+        function StartOptiTrackRecording(app)
+            if isempty(app.natnet_client)
+                [success, msg] = InitOptiTrack(app);
+                if ~success
+                    app.Msg1.HTMLSource = sprintf('<p>%s</p>', msg);
+                    return;
+                end
+            end
+            app.optitrack_recording = true;
+            app.optitrack_data = struct('time', {}, 'markers', {});
+            app.optitrack_filename = sprintf('%s_optitrack.mat', app.FullPathFilename);
+        
+            app.optitrack_timer = timer('ExecutionMode','fixedRate',...
+                'Period',1/app.optitrack_pollRate,...
+                'TimerFcn',@(~,~)CollectOptiTrackFrame(app));
+        
+            start(app.optitrack_timer);
+            app.logMessage('OptiTrack recording started.');
+        end
+        function CollectOptiTrackFrame(app)
+            try
+                frame = app.natnet_client.GetLastFrameOfData();
+                t = frame.fTimestamp;
+                if frame.nMarkers > 0
+                    n = frame.nMarkers;
+                    markerPos = zeros(n,3);
+                    for i = 1:n
+                        m = frame.OtherMarkers(i);
+                        markerPos(i,:) = [m.x, m.y, m.z];
+                    end
+                    app.optitrack_data(end+1).time = t;
+                    app.optitrack_data(end).markers = markerPos;
+                end
+            catch
+                % ignore transient errors
+            end
+        end
+        function StopOptiTrackRecording(app)
+            if app.optitrack_recording
+                stop(app.optitrack_timer);
+                delete(app.optitrack_timer);
+                app.optitrack_recording = false;
+                
+                if ~isempty(app.natnet_client)
+                    try
+                        app.natnet_client.disconnect();
+                        clear app.natnet_client;
+                    catch
+                        app.logMessage('Failed to gracefully disconnect NatNet client.', 'warning');
+                    end
+                end
+
+                
+                optitrack_data = app.optitrack_data; %#ok<NASGU>
+                save(app.optitrack_filename, 'optitrack_data');
+                app.logMessage(['OptiTrack data saved to ', app.optitrack_filename]);
+
+            end
+        end
+        function ensurePath(app, relPath)
+            % Add a relative or absolute folder safely, compatible with deployed mode
+            if isdeployed
+                fullp = fullfile(ctfroot, relPath);
+            else
+                here = fileparts(mfilename('fullpath'));
+                fullp = fullfile(here, relPath);
+            end
+            if exist(fullp, 'dir') && ~contains(path, fullp)
+                addpath(fullp);
+            end
+        end
+
+        % Function to get dll path for OptiTrack
+        % function dllFile = getNatNetDLLPath(app)
+        %     % getNatNetDLLPath
+        %     % Safely locate the NatNetML.dll file for both MATLAB and compiled exe.
+        %     % Priority order:
+        %     %   (1) Deployed exe → ctfroot/NatNet_SDK_4.3/...
+        %     %   (2) Dev absolute path (your GitHub repo)
+        %     %   (3) Relative fallback near app source folder
+        %     %
+        %     % Returns: full absolute path to NatNetML.dll
+        %     %
+        %     % 2025-10-08 — Cleaned for MewRecorder standalone compatibility
+        % 
+        %     % === Define standard SDK relative layout ===
+        %     relDLL = fullfile('NatNet_SDK_4.3','NatNetSDK','lib','x64','NatNetML.dll');
+        % 
+        %     % === Case 1: Running from deployed exe ===
+        %     if isdeployed
+        %         dllFile = fullfile(ctfroot, 'MewRecorder', relDLL);
+        % 
+        %     % === Case 2: Running inside MATLAB (developer mode) ===
+        %     else
+        %         % Absolute development path on your machine
+        %         devAbs = 'C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.dll';
+        %         if exist(devAbs, 'file')
+        %             dllFile = devAbs;
+        %         else
+        %             % Try relative to this class file (useful on another dev machine)
+        %             here = fileparts(mfilename('fullpath'));
+        %             alt = fullfile(here, relDLL);
+        %             if exist(alt, 'file')
+        %                 dllFile = alt;
+        %             else
+        %                 error('NatNetML.dll not found in expected locations.\nChecked:\n  %s\n  %s', devAbs, alt);
+        %             end
+        %         end
+        %     end
+        % 
+        %     % === Verify existence and normalize ===
+        %     if ~exist(dllFile, 'file')
+        %         error('NatNetML.dll not found at: %s', dllFile);
+        %     end
+        % 
+        %     % Normalize path (remove .. and relative elements)
+        %     dllFile = string(java.io.File(dllFile).getCanonicalPath());
+        % end
+        function dllFile = getNatNetDLLPath(app)
+            try
+                srcDll = 'C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.dll';
+                if isdeployed
+                    % Path where Runtime extracts files
+                    dllFile = fullfile(ctfroot, 'NatNetML.dll');
+                    if ~isfile(dllFile)
+                        copyfile(srcDll, dllFile);
+                    end
+
+                    % === Unblock DLL (Windows adds "Zone.Identifier") ===
+                    try
+                        % Remove zone identifier if exists
+                        system(sprintf('powershell -Command "Unblock-File -Path ''%s''"', dllFile));
+                    catch
+                        % ignore PowerShell absence
+                    end
+
+                else
+                    dllFile = srcDll;
+                end
+
+                fprintf('[DLL Loader] Using DLL path: %s\n', dllFile);
+            catch ME
+                warning('❌ Failed to load NatNetML.dll: %s', ME.message);
+            end
+        end
+
+        function [success, msg] = sendMotiveCommand(app, cmd)
+        % sendMotiveCommand  Send remote command to Motive over TCP
+        % Requires Motive "Remote Control" enabled.
+        % Common commands: 'StartRecording', 'StopRecording', 'SetRecordingName <name>', 'SaveTake'
+        
+            success = false;
+            msg = '';
+            try
+                % Motive listens on port 1510 by default
+                host = app.optitrack_serverIP;
+                port = 1510;
+        
+                % Open TCP connection
+                t = tcpclient(host, port, 'Timeout', 2);
+                % Send ASCII command
+                write(t, uint8([cmd newline]));
+                pause(0.1); % short delay
+                clear t;
+        
+                success = true;
+                msg = sprintf('Sent command to Motive: %s', cmd);
+                fprintf('%s\n', msg);
+            catch ME
+                msg = sprintf('Failed to send Motive command (%s): %s', cmd, ME.message);
+                warning(msg);
+            end
+        end
+
+
+        %% ======= Check if Motive is Running =======
+        function isRunning = isMotiveRunning(app)
+            % Returns true if OptiTrack Motive process is running on Windows
+            [~, tasklist] = system('tasklist');
+            isRunning = contains(tasklist, 'Motive.exe', 'IgnoreCase', true);
+        end
+
+        %%
+        function success = SaveAudio(app)
+            success = false;
+            try 
+                if isrecording(app.audioRecObj), stop(app.audioRecObj);end
+                s = getaudiodata(app.audioRecObj);
+                delete(app.audioRecObj);
+            catch
+                delete(app.audioRecObj);
+            end
+            nChannels = size(s, 2);
+            if app.Ck_ifNormAudio.Value
+                for i = 1:nChannels
+                    s1 = s(:,i); s1 = s1 - mean(s1); 
+                    s1 = s1 ./ max(abs(s1)); s(:,i) = s1;
+                end
+            end
+            try
+                audiowrite(app.AudioFullPathFilename, s , app.audio_srate);
+            catch
+                success = false;  return;
+            end
+            success = true;
+        end %SaveAudio
+        % function success = SaveAudio(app)
+        %     success = false;
+        %     try
+        %         if app.useAudioDeviceReader
+        %             % ======= Stop WASAPI =======
+        %             if ~isempty(app.audioTimer) && isvalid(app.audioTimer)
+        %                 stop(app.audioTimer);
+        %                 delete(app.audioTimer);
+        %             end
+        %             if ~isempty(app.audioReader)
+        %                 release(app.audioReader);
+        %             end
+        %             s = app.audioData;
+        %             app.logMessage(sprintf('Saving WASAPI audio (%d ch)...', size(s,2)));
+        %         else
+        %             % ======= Stop classic recorder =======
+        %             if isrecording(app.audioRecObj)
+        %                 stop(app.audioRecObj);
+        %             end
+        %             s = getaudiodata(app.audioRecObj);
+        %             delete(app.audioRecObj);
+        %             app.logMessage(sprintf('Saving audiorecorder data (%d ch)...', size(s,2)));
+        %         end
+        % 
+        %         if isempty(s)
+        %             app.logMessage('No audio data captured!', 'warning');
+        %             return;
+        %         end
+        % 
+        %         % Normalize if needed
+        %         if app.Ck_ifNormAudio.Value
+        %             s = s - mean(s, 1);
+        %             s = s ./ max(abs(s), [], 'all');
+        %         end
+        % 
+        %         audiowrite(app.AudioFullPathFilename, s, app.audio_srate);
+        %         success = true;
+        %         app.logMessage(sprintf('Audio saved to %s', app.AudioFullPathFilename), 'info');
+        %     catch ME
+        %         app.logMessage(sprintf('❌ SaveAudio failed: %s', ME.message), 'error');
+        %     end
+        % end
+
+
+
+
+        %%
+        function appSetStatus(app, status)
+            busy = false; active = false;
+            %% Disable the following functions/buttons when busy (enable them when ready):
+            funcsToBeDisabledIfBusy = ...
+                {app.Bn_Record; app.Ed_FilePrefix; app.Mn_Setting; ...
+                 app.Bn_SelectOutputFolder; app.Ed_RecordDur; app.Ck_RecordByDur; ...
+                 app.Pn_Filename; app.Mn_Setting; app.Mn_Info; ...
+                 app.Ck_ifNormAudio; app.Ck_ifRecordTelemed; app.Mn_Tools; ...
+                 app.Ck_AppendDate; app.Ck_AppendTime
+                };
+            %%
+            funcsToBeDisabledIfInactive = ...
+                {app.Bn_Record; app.Bn_Stop; app.Mn_Tools; app.Mn_Info; ...
+                 app.Ed_RecordDur; app.Ck_RecordByDur;  app.Ed_FilePrefix;  ...
+                 app.Ck_AppendDate; app.Ck_AppendTime ...
+                };
+            %%
+            if strcmpi(status, 'busy')
+                active = true; busy = true; app.status = 'busy';               
+            elseif strcmpi(status, 'ready')
+                active = true; busy = false; app.status = 'ready';
+                app.logMessage('Ready.', 'info');
+            elseif strcmpi(status, 'inactive')  
+                active = false; busy = false; app.status = 'inactive';  
+            end
+            if busy
+                app.flag_busy = true;
+                for i = 1:numel(funcsToBeDisabledIfBusy), funcsToBeDisabledIfBusy{i}.Enable = 'off'; end
+            else 
+                app.flag_busy = false;
+                for i = 1:numel(funcsToBeDisabledIfBusy), funcsToBeDisabledIfBusy{i}.Enable = 'on';end
+                app.Bn_Record.Value = 0;
+                updateFilenameTemplate(app);
+            end 
+            if ~active
+                for i = 1:numel(funcsToBeDisabledIfInactive), funcsToBeDisabledIfInactive{i}.Enable = 'off'; end
+            end 
+        end %appSetStatus
+        function yes = isActive(app)
+          if strcmpi(app.status, 'inactive'), yes = false; else, yes = true; end
+        end % isActive
+        function yes = isBusy(app)
+          if strcmpi(app.status, 'busy'), yes = true; app.flag_busy = true; else, yes = false; app.flag_busy = false; end
+        end % isActive        
+        %%
+        function GenFilename(app)
+            dateStr = string(app.recordStartTime, app.dateFormat);
+            timeStr = string(app.recordStartTime, app.timeFormat);
+            fn = app.save_file_prefix;
+            if app.Ck_AppendDate.Value, fn = sprintf('%s_%s', strip(fn, 'right', '_'), dateStr); end 
+            if app.Ck_AppendTime.Value, fn = sprintf('%s_%s', strip(fn, 'right', '_'), timeStr); end 
+            app.Ed_Filename.Value = fn;
+            app.FullPathFilename = fullfile(app.OutputPath, app.Ed_Filename.Value); 
+            app.AudioFullPathFilename = sprintf('%s%s', app.FullPathFilename, app.audioExt); 
+            app.TvdFullPathFilename = sprintf('%s%s', app.FullPathFilename, app.tvdExt); 
+            app.AudioFullPathFilename = app.NextAvailableFileName(app.AudioFullPathFilename);
+            app.TvdFullPathFilename = app.NextAvailableFileName(app.TvdFullPathFilename);
+            [~,fn,~]= fileparts(app.AudioFullPathFilename);
+            app.Ed_Filename.Value = fn;
+        end%GenFilename
+        %% 
+        function updateFilenameTemplate(app)
+            prefix = app.Ed_FilePrefix.Value;
+            exp = '[a-zA-Z_0-9-]+';
+            prefix = regexp(prefix, exp, 'match');
+            prefix = strjoin(prefix,'');
+            app.save_file_prefix = strip(prefix, 'right', '_');
+            if isempty(app.save_file_prefix), app.save_file_prefix= '_'; end
+            fn = app.save_file_prefix;
+            if app.Ck_AppendDate.Value, fn = sprintf('%s_%s', strip(fn, 'right', '_'), app.dateFormat); end 
+            if app.Ck_AppendTime.Value, fn = sprintf('%s_%s', strip(fn, 'right', '_'), app.timeFormat); end 
+            app.Ed_Filename.Value = fn;          
+        end %updateFilenameTemplate
+        %%
+        function do_log(app, msg)
+            if nargin < 2, msg = ''; end
+            app.recordStopTimeStr = string(app.recordStopTime, 'HH:mm:ss.SSS');
+            app.recordStartTimeStr = string(app.recordStartTime, 'HH:mm:ss.SSS');
+            logFullPathFN = fullfile(app.OutputPath, app.logFilename);
+            fn = app.Ed_Filename.Value;
+            
+            try
+                fid = fopen(logFullPathFN, 'at'); % append log file
+                fprintf(fid,'%s\t%s\t%s\t%s\tOptiTrack=%d\t%s\n', ...
+                    fn, app.recordStartTimeStr, app.recordStopTimeStr, msg, ...
+                    app.Ck_ifRecordOptitrack.Value, app.Ed_Annotate.Value);
+            catch
+            end      
+            % app.Msg1.HTMLSource = sprintf('%s <p> %s <br>File saved. </p>', app.Msg1.HTMLSource, fn);
+            app.logMessage(sprintf('%s File saved.', fn), 'info');
+        end % do_log
+        %% another log function for the app
+        function logMessage(app, msg, type)
+            if nargin < 3 || isempty(type)
+                type = 'info';
+            end
+        
+            t = datestr(now,'HH:MM:SS');
+        
+            % Colors
+            switch lower(type)
+                case 'error'
+                    color = '#ff4444';
+                case 'warning'
+                    color = '#ff9900';
+                otherwise
+                    color = '#000000'; % info = black
+            end
+        
+            % Format one line
+            msg = strrep(msg, newline, '<br>');
+            newLine = sprintf('<p style="color:%s; margin:0;">[%s] %s</p>', color, t, msg);
+        
+            % Append to stored log HTML
+            if isfield(app.Msg1.UserData, 'logHTML')
+                app.Msg1.UserData.logHTML = [app.Msg1.UserData.logHTML newLine];
+            else
+                app.Msg1.UserData.logHTML = newLine;
+            end
+        
+            % Rebuild only inner content
+            fullHTML = [
+                "<html><head><style>", ...
+                "body {font-family: Consolas; font-size:8px; line-height:1.0; margin:2px;}", ...
+                "#logbox {height:100%; overflow-y:auto; display:flex; flex-direction:column-reverse;}", ...
+                "#content {display:flex; flex-direction:column;}", ...
+                "</style></head><body>", ...
+                "<div id='logbox'><div id='content'>", ...
+                app.Msg1.UserData.logHTML, ...
+                "</div></div></body></html>"
+            ];
+        
+            app.Msg1.HTMLSource = strjoin(fullHTML, "");
+            drawnow limitrate nocallbacks; % ensure refresh
+        
+            % Console echo
+            fprintf('[%s] %s\n', t, msg);
+        end
+
+
+
+
+
+        %% 
+        function [success, msg] = DetectEchoWave(app)
+            success = false; msg = '';
+            if ~ispc, msg = 'Error in EchoWave: Not PC!';  return; end
+            if ~app.isAdminPC, msg  = 'Error in EchoWave: Not Admin!';  return; end
+            if isempty(app.EchoWavePath)
+                app.EchoWavePath =  app.FindTelemedEchoWavePath; 
+                if isempty(app.EchoWavePath)
+                    msg = 'Error in EchoWave: path not found!';  return; 
+                end
+            end
+            app.EchoWaveCmd = sprintf('"%s\\EchoWave.exe"', app.EchoWavePath);
+            % [status, tasklist] = system('tasklist'); % this takes about 1 second.
+            % if ~contains(tasklist, 'EchoWave'), [status, cmdout] = system(app.EchoWaveCmd); end
+            asm_path =  [app.EchoWavePath '\Config\Plugins\AutoInt1Client.dll'];
+            asm = NET.addAssembly(asm_path); %#ok<*NASGU> 
+            app.asmcmd = AutoInt1Client.CmdInt1();
+            if ~isEchoWaveConnected(app), msg = 'EchoWave not connected! (check:AutoInt1Client.dll)'; return; end
+            success = true;
+            % EchoWaveFreeze(app); 
+            if app.num_audio_channels < 2, app.num_audio_channels = 2; end
+            [support, msg]=CheckIfAudioDeviceSettingSupported(app);
+            if ~support,  msg = 'Audio device not compatible with EchoWave!';  return; end
+            [app.ifProbeConnected, msg] = EchoWaveCheckProbe(app);
+        end %DetectEchoWave
+        %% 
+        function [hasProbe, msg] = EchoWaveCheckProbe(app)
+            msg = '';
+            id_is_no_probe = 223; id_is_unsupported_probe = 224;
+            id_get_current_probe_code = 917; id_get_current_probe_name = 918;
+            ifNoProbe = app.asmcmd.ParamGetBool(id_is_no_probe);
+            ifProbeUnsupported = app.asmcmd.ParamGetBool(id_is_unsupported_probe);
+            hasProbe = ~ifNoProbe && ~ifProbeUnsupported; 
+            if ~hasProbe, msg = 'probe not found!'; end
+            % probe_code = app.asmcmd.ParamGetInt(id_get_current_probe_code);
+            % probe_name = app.asmcmd.ParamGetString(id_get_current_probe_name);
+        end %EchoWaveCheckProbe
+        %% 
+        function EchoWaveFreeze(app)
+            app.asmcmd.ParamSet(app.id_scanning_state_set, app.id_state_b_b1f);  % Freeze
+        end %EchoWaveFreeze
+        %%
+        function info = EchoWaveGetTVDinfo(app, tvdFilename)
+            info = [];
+            s = app.asmcmd.OpenFile(tvdFilename);
+            if s > 0, return;end
+            info.nFrames = double(app.asmcmd.GetFramesCount());
+            app.asmcmd.GoToFrame1n(info.nFrames, true);
+            info.dur = app.asmcmd.GetCurrentFrameTime(); % msec.
+            info.dur  = double(info.dur /1000); % to sec.
+            if info.nFrames > 0 && info.dur > 0
+                info.fps = info.nFrames / info.dur;
+            end
+            info.frameWidth = app.asmcmd.GetLoadedFrameWidth();
+            info.frameHeight = app.asmcmd.GetLoadedFrameHeight();
+        end % 
+        %%
+        function out = isEchoWaveConnected(app)
+            stat = app.asmcmd.ConnectToRunningProgram(); 
+            if (stat ~= 0), out = false;  return; else, out = true; end
+        end %isEchoWaveConnected
+        %%
+        function ConvertTVDtoMP4(app, outPath)
+            if nargin < 2 || isempty(outPath), outPath = app.OutputPath; end
+            outPath = ['"' strip(outPath, 'both', '"'), '"'];
+            fromFormat = 'tvd'; toFormat = 'mp4';
+            convertFmtCmd = [app.EchoWaveCmd ' -convert_directory ' outPath ' ' fromFormat ' ' toFormat]; 
+            [status,cmdout] = system(convertFmtCmd, '-echo'); %#ok<*ASGLU>        
+        end %ConvertTVDtoMP4   
+        function ConvertTVDtoVideo(app, outPath, toFormat)
+            % toFormat: video output formats: avi_comp, avi, avi_cust, avi_wmv9, mp4, dcm_jpeg_cine, dcm_cine
+            if nargin < 2 || isempty(outPath), outPath = app.OutputPath; end
+            outPath = ['"' strip(outPath, 'both', '"'), '"'];
+            fromFormat = 'tvd'; 
+            convertFmtCmd = [app.EchoWaveCmd ' -convert_directory ' outPath ' ' fromFormat ' ' toFormat]; 
+            [status,cmdout] = system(convertFmtCmd, '-echo'); %#ok<*ASGLU>        
+        end %ConvertTVDtoMP4           
+        %%
+        function [success, msg] = selectAudioDevice(app, devID)
+            %% select audio device:            
+            msg = ''; devs = audiodevinfo;  
+            if isempty(devs) || isempty(devs.input),  success = false; app.audio_dev_idx =[]; msg = 'No audio device!'; return; end
+            input_devs = devs.input; 
+            dev_names = {input_devs.Name}'; device_IDs = cell2mat({input_devs.ID})';
+            %% 
+            if nargin < 2 || isempty(devID)
+                listString = dev_names; prompt = {'Select audio device:'};
+                [ind, ifSelected] = listdlg('PromptString',prompt,...
+                    'SelectionMode','single','ListString', listString, ...
+                    'ListSize', [480, 100], ...
+                    'InitialValue', find(ismember(device_IDs, app.audio_dev_idx)));
+                figure(app.UIFigure) % Get focus back on UIFigure
+                if ~ifSelected, success = false; app.audio_dev_idx =[]; app.audio_dev_name =''; msg = '<p></p>'; return;  end
+                devID = device_IDs(ind);
+            end %isempyt(devID)
+            ind = find(ismember(device_IDs, devID));
+            if ~any(ismember(device_IDs, devID)), success = false; app.audio_dev_idx =[]; app.audio_dev_name =''; msg = 'Wrong audio device ID!'; return; end  
+            app.audio_dev_idx = devID;   app.audio_dev_name = dev_names{ind};  
+
+            % Set audio device idx and name
+            % Create the message with HTML formatting
+            msg = sprintf('AudioDevIdx: %d<br>AudioDevName: %s', app.audio_dev_idx, app.audio_dev_name);
+            
+            % Define HTML content with CSS for smaller font size
+            htmlContent = ['<html><head><style>', ...
+                           'body { font-size: 10px; }', ... % Set your desired smaller font size here
+                           '</style></head><body>', ...
+                           msg, ... % Insert the formatted message here
+                           '</body></html>'];
+            
+            % Set the HTML content to the uihtml component
+            app.Pn_Msg_AudioDevice.HTMLSource = htmlContent;
+
+            success = true; 
+            if ~success, appSetStatus(app, 'inactive'); end
+            figure(app.UIFigure) % Get focus back on UIFigure
+        end  %selectAudioDevice
+        function [support, msg] = CheckIfAudioDeviceSettingSupported(app)
+            %% Check if audio settings are supported:
+            msg = '';input_IO = 1;  
+            if isempty(app.audio_dev_idx), support = false; msg = 'No audio device'; appSetStatus(app, 'inactive'); return; end
+            support = audiodevinfo(input_IO, app.audio_dev_idx, app.audio_srate, app.audio_bit_rate, app.num_audio_channels);
+            UpdateRefreshAudioStatus(app)
+            if ~support
+                msg = 'Audio settings not supported! <br>  Check (sampling rate, nChannels...): <br> Setting->Audio settings';
+                appSetStatus(app, 'inactive'); return
+            end             
+        end %CheckIfAudioDeviceSettingSupported
+        function UpdateRefreshAudioStatus(app)
+            app.Lb_AudioSettings.Text = ...
+                    sprintf('[%d kHz; %d channel(s)]', round(app.audio_srate/1000), app.num_audio_channels);
+            for i = 1:app.max_audio_sig_lamps
+                if app.num_audio_channels >= i 
+                    app.("Lp_AudSig" + num2str(i)).Visible = 'on'; 
+                else
+                    app.("Lp_AudSig" + num2str(i)).Visible = 'off'; 
+                end
+            end
+        end %UpdateRefreshAudioStatus
+        %% 
+        function toggleEchoWaveFunctions(app, toState)
+            % Turn on/off EchoWave related functions according to current conditions.
+            % toState = 'on' or 'off'
+            EchoWaveFuncs = {app.Ck_ifRecordTelemed; app.Mn_ConvertTVDtoMP4viaAVI; app.Mn_LoadEchoWavePreset};
+            nFuncs = numel(EchoWaveFuncs);
+            if ~any(ismember({'on', 'off'}, toState)), return;end
+            for i = 1: nFuncs, EchoWaveFuncs{i}.Enable = toState; end
+        end % toggleEchoWaveFunctions(app)
+        %%
+        function captureAudioFrame(app)
+            try
+                frame = app.audioReader();
+                if isempty(frame), return; end
+                app.audioData = [app.audioData; frame]; %#ok<AGROW>
+                % optional: blink lamps for signal activity
+                n = size(frame, 2);
+                for i = 1:min(n, app.max_audio_sig_lamps)
+                    if any(frame(:,i))
+                        app.("Lp_AudSig" + num2str(i)).Color = app.hasSignalColor;
+                    end
+                end
+            catch ME
+                app.logMessage(sprintf('Audio frame error: %s', ME.message), 'warning');
+            end
+        end
+
+    end %methods (Access = private)
+    %% Below are supporting functions
+    %% Call by app.FUNCTIONNAME
+    methods (Access = public, Static=true)
+        function out = isAdminPC
+            if ~ispc, out = false; return; end
+            out = System.Security.Principal.WindowsPrincipal(System.Security.Principal.WindowsIdentity.GetCurrent()).IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        end% isAdminPC
+        %%
+        function EchoWavePath  = FindTelemedEchoWavePath(varargin)
+        % Find the path of installed Echo Wave II in Windows. 
+        % Return empty if not found.
+        % WR Chen 26OCT2022
+        %     Update:  02JUN2023  
+        %              Starting from EchoWave 4.2.0, the application
+        %              folder changed to Program Files\Telemed\Echo Wave II Application\.
+        %              If both older and newer version of EchoWave applications
+        %              exist, this script will return the newer version.
+        sep = filesep;
+        programFilesFolders = {'Program Files', 'Program Files (x86)'};
+        EchoWaveFolders = {'Telemed\Echo Wave II Application\EchoWave II', 'Telemed\Echo Wave II'}; nEchoWaveFolders = numel(EchoWaveFolders);
+        exeFN = 'EchoWave.exe';
+        startDrive = 'C'; endDrive = 'Z';
+        found = 0; EchoWavePath = [];
+        for i = double(startDrive):double(endDrive)
+            drive = [char(i), ':' sep]; 
+            for j = 1:numel(programFilesFolders)
+                programFilesFolder = programFilesFolders{j};
+                for k = 1:nEchoWaveFolders            
+                    EchoWaveFolder = EchoWaveFolders{k};
+                    pathCandidate = [drive, programFilesFolder, sep, EchoWaveFolder];
+                    candEchoWaveExeFN = fullfile(pathCandidate, exeFN);
+                    if exist(candEchoWaveExeFN, 'file')
+                        found = 1; EchoWavePath = pathCandidate; return; %#ok<*NASGU> 
+                    end
+                end
+            end
+        end
+        % if ~found, fprintf('Telemed EchoWave NOT found!\n'); end
+        end % FindTelemedEchoWavePath()
+        %% 
+        function foundPath = FindAppInstalledPath(varargin)
+            found = 0; foundPath = []; sep = filesep;
+            programFilesFolders = {'Program Files', 'Program Files (x86)'};
+            appFolders = {'MewRecorder\application'};  exeFN = 'MewRecorder.exe';
+            startDrive = 'C'; endDrive = 'Z';   
+            for i = double(startDrive):double(endDrive)
+                drive = [char(i), ':' sep]; 
+                for j = 1:numel(programFilesFolders)
+                    programFilesFolder = programFilesFolders{j};  appFolder = appFolders{1};
+                    pathCandidate = [drive, programFilesFolder, sep, appFolder];
+                    candExeFN = fullfile(pathCandidate, exeFN);
+                    if exist(candExeFN, 'file')
+                        found = 1; foundPath = pathCandidate; return; %#ok<*NASGU> 
+                    end              
+                end
+            end            
+        end %  FindAppInstalledPath(varargin)
+        %%
+        function nextFileName = NextAvailableFileName(filename)
+            % Find next available filename.
+            % Example: 
+            % if 'abc.txt', 'abc(1).txt', 'abc(2).txt' exist, 
+            % then myNextFileName('abc.txt') will return 'abc(3).txt'
+            % W.Chen 06MAR2023
+            if ~exist(filename, 'file'), nextFileName = filename; return; end
+            [p, f, e] = fileparts(filename); 
+            i = 1; upperLimit = 100;   fn = sprintf('%s(%d)%s', f, i, e);   nextFileName = fullfile(p, fn);
+            while exist(nextFileName, 'file') && i < upperLimit
+                i = i+1; fn = sprintf('%s(%d)%s', f, i, e); nextFileName = fullfile(p, fn);  
+            end
+            if i >=upperLimit, nextFileName = []; end
+        end % NextAvailableFileName  
+        %%
+        function [filelist, folder] = mygfl(mask, keepExt)
+            if nargin<2, keepExt = 1; end
+            FLs = dir(mask);   ix = ~cell2mat({FLs.isdir});  FLs = FLs(ix);  filelist = {FLs.name}'; folder = {FLs.folder}';
+            if ~keepExt, for fi = 1:numel(filelist), [p, f, e]=fileparts(filelist{fi});   filelist{fi} = f;  end; end
+        end % mygfl   
+        %%
+        function  [success, msg]=deleteFolder(folderPath)
+            success = false; msg = '';
+            tmpfl = mygfl([folderPath filesep '*.*'],1);
+            if ~isempty(tmpfl)
+                for i = 1:numel(tmpfl),  tmpFN = fullfile(folderPath, tmpfl{i});  delete(tmpFN);  end
+            end
+            [success, msg] = rmdir(folderPath);
+            function [filelist, folder] = mygfl(mask, keepExt)
+                if nargin<2, keepExt = 1; end
+                FLs = dir(mask);   ix = ~cell2mat({FLs.isdir});  FLs = FLs(ix);  filelist = {FLs.name}'; folder = {FLs.folder}';
+                if ~keepExt, for fi = 1:numel(filelist), [p, f, e]=fileparts(filelist{fi});   filelist{fi} = f;  end; end
+            end % mygfl            
+        end %deleteFolder
+        %%    
+        function [sig, sr, locs, frameStart] = TrimTelemedAudio(FName, resampleRate, outFName, fps, sync_channel)
+        % Trim the begining of Telemed two-channel audio, using the sync-pulse
+        % signals. 
+        % WR Chen 19DEC2022
+        if nargin < 2, resampleRate = [];end
+        if nargin < 3, outFName = []; end
+        if nargin < 4, fps = []; end
+        if nargin < 5 || isempty(sync_channel), sync_channel =2; end
+        if isempty(fps), max_fps = 300; else, max_fps = fps * 1.3; end
+        [locs, audio, syncs, sr] = ParseTelemedSyncPulse(FName, sync_channel, max_fps);
+        nSamplesAudio = size(audio,1); 
+        frameStart = mean(locs(1:2)); % Get the midpoint between the time of starting scanning and the completion of scanning first frame.
+        frameDur = median(diff(locs(2:end))); 
+        frameEnd = locs(end) + frameDur; 
+        frameStartN = floor(frameStart * sr)+1;
+        frameEndN = floor(frameEnd * sr)+1;  
+        if frameEndN > nSamplesAudio, frameEndN = nSamplesAudio; end
+        sig = audio(frameStartN:frameEndN);
+        if ~isempty(resampleRate),  sig = resample(sig, resampleRate,sr); sr = resampleRate; end
+        if ~isempty(outFName), audiowrite(outFName, sig, sr); end
+            function [locs, audio, syncs, sr] = ParseTelemedSyncPulse(FName, sync_channel, max_fps)
+                if nargin < 2, sync_channel = 2;end
+                if nargin < 3 || isempty(max_fps), max_fps = 300; end 
+                if sync_channel == 2, audio_channel = 1; else, audio_channel = 2; end
+                [s, sr]= audioread(FName); nChannels = size(s,2);
+                for i = 1:nChannels, s1 = s(:,i); s(:,i) = s1 ./ max(abs(s1)); end
+                audio = s(:,audio_channel); syncs = s(:,sync_channel); 
+                nSamples = length(audio); dur = (nSamples-1) / sr; 
+                syncs = syncs ./ max(abs(syncs));   min_fps = 20; 
+                [pks, locs] = findpeaks(syncs,sr, 'MinPeakHeight', 0.3, 'MinPeakDistance',1/max_fps);
+                intervals = diff(locs);
+            end % ParseTelemedSyncPulse
+        end %TrimTelemedAudio
+       %%
+        function [status,cmdout] = ffmpegCombineVideoAudio(input_video_filename, input_audio_filename, output_video_filename, opt)
+            % Combine video and audio using FFMPEG.
+            % REQUIRE: FFMPEG properly installed and searchable in the system PATH. 
+            % WR Chen  23MAY2023
+            % Latest:  15JUN2023 : added pixel format
+            arguments
+                input_video_filename char {mustBeText}
+                input_audio_filename char {mustBeText}
+                output_video_filename char {mustBeText}
+                opt.vcodec char {mustBeText} = '-c:v libx264'
+                opt.acodec char {mustBeText} = '-c:a copy'
+                opt.preset char {mustBeText} = '-preset slow'
+                opt.crf char {mustBeText} = '-crf 23' % crf: 0:best ~ 51:worst; Default=23; 17~18: visually lossless
+                opt.pixel_format char {mustBeText}  = '-pix_fmt yuv420p' 
+                opt.ifUseShortest logical = false % if true, the video and audio will be trimmed to whichever is the shortest.
+                opt.ffmpegPath char {mustBeText} = ''
+            end
+            if ~exist(input_video_filename, 'file'), fprintf('Cannot find: %s\n', input_video_filename); return; end
+            if ~exist(input_audio_filename, 'file'), fprintf('Cannot find: %s\n', input_audio_filename); return; end
+            if opt.ifUseShortest, useShortest = '-shortest'; else, useShortest = ''; end
+            % check FFMPEG:
+            if ~isempty(opt.ffmpegPath)
+                ffmpegExe = ['"', fullfile(opt.ffmpegPath, 'ffmpeg'), '"'];
+            else
+                ffmpegExe = 'ffmpeg';
+            end
+            %%   
+            aFn = input_audio_filename; vFn = input_video_filename;
+            outFn = output_video_filename;
+            command = sprintf(...
+             '%s -i "%s" -i "%s" -map 0:v -map 1:a %s %s %s %s %s -strict -2 %s -y "%s"', ...
+                ffmpegExe, vFn, aFn, opt.vcodec, opt.pixel_format, opt.preset, opt.crf, opt.acodec, useShortest, outFn);
+            % tic
+            [status,cmdout] = system(command,'-echo');
+            % toc    
+        end % ffmpegCombineVideoAudio       
+        %%
+        function [status,cmdout] = ffmpegConvertOneFile_simple(input_video_file, output_video_file, opt)
+            % Convert one video file to another format, using FFMPEG. 
+            % Assuming input video file exists, output file doesn't exist, and ffmpeg is installed. 
+            % Usage:  ffmpegConvertOneFile_simple(input_video, output_video);
+            %  Using optional arguments: 
+            %       e.g.:  ffmpegConvertOneFile_simple('1.avi', '1.mp4', input_path = '/desktop', acodec = 'copy');
+            %       or      ffmpegConvertOneFile_simple('1.avi', '1.mp4', 'acodec', 'aac');
+            % Optional input arguments:  vcodec :  video codec.  Default = 'libx264';   acode  :   audio code.   Default =  'copy'  
+            %       crf :     compression quality.  Default = '23' % crf: 1:best ~ 51:worst; Default=23; 17~18: visually lossless
+            %       preset :  ffmpeg preset. Default =  'slow'; other options are 'fast', 'medium', 'slower', 'veryslow'. (don't use 'fast' unless for testing)
+            % Wei-Rong Chen  06FEB2024
+            arguments
+                input_video_file char {mustBeText} = '1.avi';
+                output_video_file char {mustBeText} = '1.mp4';
+                opt.vcodec char {mustBeText} = ' libx264'
+                opt.acodec char {mustBeText} = 'copy'
+                opt.preset char {mustBeText} = 'slow'
+                opt.crf char {mustBeText} = '23' % crf = 0:best ~ 51:worst; Default=23; 17~18: visually lossless
+                opt.pixel_format char {mustBeText}  = '-pix_fmt yuv420p'  % don't change this!
+            end
+            opt.vcodec = strtrim(strrep(lower(opt.vcodec), '-c:v', '')); if ~isempty(opt.vcodec), opt.vcodec = ['-c:v ' opt.vcodec]; end
+            opt.acodec = strtrim(strrep(lower(opt.acodec), '-c:a', ''));  if ~isempty(opt.acodec), opt.acodec = ['-c:a ' opt.acodec]; end
+            opt.preset = strtrim(strrep(lower(opt.preset), '-preset', ''));  if ~isempty(opt.preset), opt.preset = ['-preset ' opt.preset]; end
+            opt.crf = strtrim(strrep(lower(opt.crf), '-crf', '')); if ~isempty(opt.crf), opt.crf = ['-crf ' opt.crf]; end
+             vFn = input_video_file; outFn = output_video_file;
+            command = sprintf('ffmpeg -i "%s" %s %s %s %s %s -y "%s"', vFn, opt.vcodec, opt.pixel_format, opt.preset, opt.crf, opt.acodec, outFn);
+            tic;  [status,cmdout] = system(command,'-echo'); toc
+            if status ~= 0 || contains(cmdout, 'Conversion failed'), fprintf('\nFailed to convert the following files:\n'); end
+        end % ffmpegConvertOneFile_simple        
+        %%
+        function [found, cmdout, version] = hasFFmpegInstalled(ffmpegPath)
+                if nargin > 0 && ~isempty(ffmpegPath),  ffmpegExe = ['"', fullfile(ffmpegPath, 'ffmpeg'), '"']; else, ffmpegExe = 'ffmpeg'; end
+                cmd  = sprintf('%s -version', ffmpegExe); [status,cmdout] = system(cmd , '-echo'); if contains(cmdout, 'ffmpeg') && contains(cmdout, 'version'), found = true; else,  found= false; cmdout = 'ffmpeg not found'; end
+                exp = 'ffmpeg\s+version\s+(\S+)\s+'; version = '';
+                if found, v = regexp(cmdout, exp, 'tokens'); if ~isempty(v) && iscell(v), version = v{1}{1}; end;end
+        end % hasFFmpegInstalled
+        %%
+    end % methods (Access = public, Static=true)
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Code that executes after component creation
+        function startupFcn(app)
+            % Create persistent HTML shell
+            html = [
+                "<html><head><style>", ...
+                "body {font-family: Consolas; font-size:8px; line-height:1.0; margin:2px;}", ...
+                "#logbox {height:100%; overflow-y:auto; display:flex; flex-direction:column-reverse;}", ...
+                "#content {display:flex; flex-direction:column;}", ...
+                "</style></head><body>", ...
+                "<div id='logbox'><div id='content'></div></div>", ...
+                "</body></html>"
+            ];
+            app.Msg1.HTMLSource = strjoin(html, "");
+        
+            app.Msg1.UserData.logHTML = "";  % keep internal copy
+            app.logMessage('=== MewRecorder started ===', 'info');
+            % Setup styled log area (small text)
+            % app.Msg1.HTMLSource = ['<html><body style="font-family: Consolas;', ...
+            %                        ' font-size:8px; line-height:1.0;">', ...
+            %                        '</body></html>'];
+            % 
+            % app.logMessage('=== MewRecorder started ===', 'info');
+            if isdeployed
+                app.logMessage(['Running deployed. ctfroot = ' ctfroot]);
+            else
+                app.logMessage('Running inside MATLAB environment.');
+            end
+        
+            % Check OptiTrack dependencies
+            dllFile = app.getNatNetDLLPath();
+            fprintf('NatNetML.dll: %s\n', dllFile);
+            relWrapper = fullfile('NatNet_SDK_4.3','NatNetSDK','lib','x64');
+            if isdeployed
+                wrapperPath = fullfile(ctfroot, 'MewRecorder', relWrapper);
+            else
+                wrapperPath = 'C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNet_SDK_3.1\NatNetSDK\Samples\Matlab';
+            end
+            if exist(wrapperPath,'dir')
+                fprintf('natnet.p folder found: %s\n', wrapperPath);
+            else
+                warning('natnet.p folder not found: %s', wrapperPath);
+            end
+        
+            initialize(app);
+        end
+
+        % Value changed function: Bn_Record
+        function StartRecordButtonPushed(app, event)
+            % DO NOT clear app.Msg1.HTMLSource anymore
+            app.logMessage('----------------------------', 'info');
+            app.logMessage('New recording session started', 'info');
+
+
+            if app.isRecording, return; end
+            app.isRecording = true;
+            app.Bn_Record.Enable = 'off';            
+            if app.Ck_ifRecordTelemed.Value
+                if ~isEchoWaveConnected(app), app.isRecording =false; app.Msg1.HTMLSource = '<p> Echo Wave disconnected! </p>'; app.Bn_Record.Enable = 'on'; return;   end
+                if ~app.ifProbeConnected,  app.isRecording =false; app.Msg1.HTMLSource = '<p> Echo Wave disconnected! </p>';  app.Bn_Record.Enable = 'on'; return; end
+            end           
+            appSetStatus(app, 'busy');
+            app.Bn_Stop.Enable = 'on';  
+            app.recordStartTime = datetime('now');
+            app.logMessage('Recording...', 'info');
+            GenFilename(app);            
+            %% audiorecorder:
+            audioRecordedSuccess = true;
+            try
+                app.audioRecObj= audiorecorder(app.audio_srate, app.audio_bit_rate, app.num_audio_channels, app.audio_dev_idx);
+                record(app.audioRecObj); pause(app.timerPeriod);
+
+            catch
+                app.isRecording= false; audioRecordedSuccess = false; 
+                app.Bn_Stop.Enable = 'off'; app.Bn_Record.Enable = 'on';
+                appSetStatus(app, 'ready');
+                % app.Msg1.HTMLSource = '<p>Error initiating audio recording!</p>';
+                app.logMessage(Msg1HTML);
+                return
+            end
+            %% ====== Audio recording (Hybrid: WASAPI → fallback to audiorecorder) ======
+            % audioRecordedSuccess = true;
+            % app.useAudioDeviceReader = false; % default
+            % 
+            % try
+            %     % Try modern Audio Toolbox method first
+            %     if license('test','Audio_Toolbox') && exist('audioDeviceReader','file')
+            %         try
+            %             %import audioDeviceReader
+            %             app.num_audio_channels = 4;  % request up to 4 if hardware supports
+            %             app.audioReader = audioDeviceReader( ...
+            %                 'SampleRate', app.audio_srate, ...
+            %                 'NumChannels', app.num_audio_channels, ...
+            %                 'Driver', 'WASAPI', ...
+            %                 'Device', app.audio_dev_name);
+            % 
+            %             % Verify device can actually start
+            %             frame = app.audioReader(); %#ok<NASGU>
+            % 
+            %             % Success → use WASAPI mode
+            %             app.useAudioDeviceReader = true;
+            %             app.audioData = [];
+            %             app.audioTimer = timer( ...
+            %                 'ExecutionMode','fixedRate', ...
+            %                 'Period',0.05, ...
+            %                 'TimerFcn',@(~,~)captureAudioFrame(app));
+            %             start(app.audioTimer);
+            % 
+            %             app.logMessage(sprintf('🎧 Recording via WASAPI (%d ch).', app.num_audio_channels), 'info');
+            %         catch ME
+            %             % Failed: revert to audiorecorder
+            %             app.logMessage(sprintf('⚠️ WASAPI failed: %s → using audiorecorder fallback.', ME.message), 'warning');
+            %         end
+            %     end
+            % 
+            %     % === Fallback if WASAPI not available ===
+            %     if ~app.useAudioDeviceReader
+            %         app.num_audio_channels = 2; % only stereo supported
+            %         app.audioRecObj = audiorecorder(app.audio_srate, app.audio_bit_rate, app.num_audio_channels, app.audio_dev_idx);
+            %         record(app.audioRecObj);
+            %         pause(app.timerPeriod);
+            %         app.logMessage('🎙️ Recording via audiorecorder (2-ch MME driver).', 'info');
+            %     end
+            % 
+            % catch ME
+            %     app.logMessage(sprintf('❌ Audio initialization error: %s', ME.message), 'error');
+            %     app.isRecording = false;
+            %     app.Bn_Stop.Enable = 'off';
+            %     app.Bn_Record.Enable = 'on';
+            %     appSetStatus(app, 'ready');
+            %     return;
+            % end
+
+            %% Telemed Record:
+            if app.Ck_ifRecordTelemed.Value
+                EchoWaveFreeze(app);
+                EchoWaveStartRecord(app); 
+            end
+            %% OptiTrack Record (hardware-triggered)
+            if app.Ck_ifRecordOptitrack.Value
+                if ~isMotiveRunning(app)
+                    app.Msg1.HTMLSource = ...
+                        '<p style="color:red;">⚠️ Motive is not running!<br>Start OptiTrack Motive before recording.</p>';
+                    app.Ck_ifRecordOptitrack.Value = false;
+                    figure(app.UIFigure);
+                    return;
+                end
+            
+                [success, msg] = InitOptiTrack(app);
+                if ~success
+                    % app.Msg1.HTMLSource = sprintf('<p style="color:red;">%s</p>', msg);
+                    app.logMessage(sprintf('%s', msg), 'error')
+                    return;
+                end
+            
+                % Set take name and folder (Motive will save .tak automatically)
+                takeDir  = 'C:\Users\Boram Kim\Documents\OptiTrack\Default';
+                takeName = app.Ed_Filename.Value;
+                app.natnet_client.setTakeName(app.Ed_Filename.Value);
+            
+                app.motiveTrigger.start = datetime('now');
+                app.logMessage('🔴 Motive: startRecord()');
+                app.natnet_client.startRecord();
+            
+                % (optional) also start MATLAB marker polling
+                StartOptiTrackRecording(app);
+            end
+
+
+
+            %% Recording timer:
+            dur = 0; audioSignalLength = 0; previousAudioSignalLength = 0;
+            Msg1HTML = 'Ready.';
+            while app.Bn_Record.Value
+                currentTime = datetime('now'); durObj = currentTime - app.recordStartTime;              
+                dur = round(seconds(durObj), 3); 
+                app.Ed_TimeRecorded.Value = string(durObj, 'hh:mm:ss.SSS');
+                try
+                    pause(app.timerPeriod);
+                    S = getaudiodata(app.audioRecObj); s = S(end,:); 
+                    previousAudioSignalLength = audioSignalLength;
+                    audioSignalLength = size(S,1);  
+                    audioSignalLengthDiff = audioSignalLength - previousAudioSignalLength;
+                catch
+                    app.isRecording= false; audioRecordedSuccess = false; break 
+                end
+                if audioSignalLengthDiff < 1, app.isRecording= false; audioRecordedSuccess = false; Msg1HTML = ''; break; end
+                if s(1) ~= 0, app.Lp_AudSig1.Color = app.hasSignalColor; end
+                if size(s, 2) > 1 && s(2) ~= 0, app.Lp_AudSig2.Color = app.hasSignalColor; end
+                if size(s, 2) > 2 && s(3) ~= 0, app.Lp_AudSig3.Color = app.hasSignalColor; end
+                if size(s, 2) > 3 && s(4) ~= 0, app.Lp_AudSig4.Color = app.hasSignalColor; end
+                if dur > app.maxTimeOut
+                    % app.Msg1.HTMLSource = '<p>Max time out!</p>';
+                    app.logMessage('Max time out!', 'warning')
+                    app.isRecording= false; break
+                end
+                if app.Ck_RecordByDur.Value && dur > app.Ed_RecordDur.Value
+                    app.isRecording= false; break
+                end
+            end % while app.isRecording
+            app.Bn_Stop.Enable = 'off'; 
+
+            app.Lp_AudSig1.Color = app.noSignalColor; app.Lp_AudSig2.Color = app.noSignalColor;
+            % Stop recording:
+            if app.Ck_ifRecordTelemed.Value
+                app.asmcmd.ParamSet(app.id_scanning_state_set, app.id_state_b_b1f);  % Freeze
+            end
+            try
+                stop(app.audioRecObj); 
+            catch
+                audioRecordedSuccess = false; 
+            end
+            app.recordStopTime = datetime('now');   
+            % Save data:
+            if app.Ck_ifRecordTelemed.Value, EchoWaveStopAndSave(app); end
+            if app.Ck_ifRecordOptitrack.Value
+                app.motiveTrigger.stop = datetime('now');
+                app.logMessage('🟢 Motive: stopRecord()');
+                try
+                    app.natnet_client.stopRecord();  % stop & save .tak
+                catch ME
+                    app.logMessage(sprintf('Failed to stop Motive recording: %s', ME.message), 'error');
+                end
+                StopOptiTrackRecording(app);
+            end
+
+
+            if audioRecordedSuccess
+                success = SaveAudio(app); 
+                if success
+                     if app.Ck_ifRecordTelemed.Value
+                         msg = 'success-US-audio';
+                     else
+                         msg = 'success-audio';
+                     end
+                else
+                    msg = 'write-audio-failed';     
+                    Msg1HTML = '<p>Fail to write audio file! <br>Permission denied. <br> Try another output folder.</p>';
+                end 
+            else 
+                Msg1HTML = '<p>Error in audio recording!'; 
+                msg = 'audio-error';
+            end
+            % do_log(app, msg);  
+            app.logMessage(msg)
+            %%       
+            appSetStatus(app, 'ready');
+            % app.Msg1.HTMLSource = Msg1HTML;
+            app.logMessage(Msg1HTML)
+            %% test
+            % app.asmcmd.GoToFrame1n(nFrames, true);
+            % img = uint8(app.asmcmd.GetLoadedFrameGray());
+        end
+
+        % Button pushed function: Bn_Stop
+        function Bn_StopPushed(app, event)
+            if ~app.isRecording, return; end
+            app.Bn_Stop.Enable = 'off';   app.isRecording = false;
+            app.Bn_Record.Value = false;
+            app.recordStopTime = datetime('now'); 
+            % app.Msg1.HTMLSource = '<p>Stopped</p>';     
+            app.logMessage('Stopped')
+        end
+
+        % Value changed function: Ck_AppendDate, Ck_AppendTime, 
+        % ...and 1 other component
+        function Ed_FilePrefixValueChanged(app, event)
+            if app.flag_busy, return; end
+            updateFilenameTemplate(app)
+        end
+
+        % Button pushed function: Bn_SelectOutputFolder
+        function Mn_SelectOutputFolderMenuSelected(app, event)
+            % UI select output folder:
+            if app.flag_busy, return; end
+            selpath = uigetdir(app.OutputPath, 'Select output folder');
+            figure(app.UIFigure); % Get focus back to main figure
+            if isequal(selpath, 0), return; end % user canceled
+            [success, msg] = CheckOutputFolderAccess(app, selpath);
+            if ~success
+                uialert(app.UIFigure, msg,'Access error'); 
+                return;
+            end
+            app.Bn_SelectOutputFolder.Text = selpath;
+            app.OutputPath = selpath;
+            cd(selpath);
+            if ~app.isActive, initialize(app);end
+        end
+
+        % Menu selected function: Mn_SetMaxTimeOut
+        function Mn_SetMaxTimeOutMenuSelected(app, event)
+            if app.flag_busy, return; end
+            defaultAnswer = {sprintf('%d', app.maxTimeOut)};
+            answer = inputdlg('Set max time out in seconds (< 36000s [10 hours]):',...
+             'Set max time out', [1 100], defaultAnswer);
+            figure(app.UIFigure); % Get focus back to main figure
+            isValid = true;
+             if isempty(answer) || isnan(str2double(answer{1}))
+                 app.logMessage('Invalid max time out!', 'error'); return;
+             end
+            answer = round(str2double(answer{1}));
+            if answer < 1 || answer > 36000, isValid = false; end
+            if isValid               
+                app.maxTimeOut = answer;
+                app.logMessage('Ready', 'info');
+                app.Lb_MaxTimeOut.Text = sprintf('Max time out = %s', ...
+                    string(duration(0, 0, app.maxTimeOut), 'hh:mm:ss'));
+            else
+                app.Msg1.HTMLSource = 'Invalid max time out!';
+            end
+        end
+
+        % Close request function: UIFigure
+        function UIFigureCloseRequest(app, event)
+            % if app.isRecording, return;end
+            msg = '';
+            msg = {msg, sprintf(' Close %s? ', app.AppName)};
+            selection = uiconfirm(app.UIFigure, msg,'Quit', 'Icon','warning');
+            switch selection
+                case 'OK', 
+                    if app.isRecording
+                        app.Bn_Record.Value = false;
+                        try
+                            if app.Ck_ifRecordTelemed.Value
+                                EchoWaveFreeze(app);
+                            end                    
+                            stop(app.audioRecObj);
+                        catch
+                        end
+                    end
+                    app.delete(); 
+                case 'Cancel', 
+                    return
+            end            
+        end
+
+        % Value changed function: Ck_RecordByDur
+        function Ck_RecordByDurValueChanged(app, event)
+            if app.Ck_RecordByDur.Value
+                app.Ed_RecordDur.Enable = 'on';
+            else
+                app.Ed_RecordDur.Enable = 'off';
+            end
+        end
+
+        % Menu selected function: Mn_SelectAudioDevice
+        function Mn_SelectAudioDeviceSelected(app, event)
+            if app.flag_busy, return; end
+            [success, msg] = selectAudioDevice(app);
+            if ~success, app.Msg1.HTMLSource = msg; return; end 
+            [support, msg] = CheckIfAudioDeviceSettingSupported(app);
+            if ~support, app.Msg1.HTMLSource = msg; return; end 
+            appSetStatus(app, 'ready');
+        end
+
+        % Menu selected function: Mn_AudioInfo
+        function Mn_AudioInfoMenuSelected(app, event)
+            if app.flag_busy, return;end
+            title = 'Audio device information';
+            if isempty(app.audio_dev_idx)
+                msg = 'No audio device.';
+            else
+                devs = audiodevinfo;  input_devs = devs.input; 
+                dev_names = {input_devs.Name}'; device_IDs = cell2mat({input_devs.ID})';   
+                ind = find(ismember(device_IDs, app.audio_dev_idx));
+                dev_name = dev_names{ind};
+                msg = sprintf(...
+                ['Audio Device ID: %d\n' ...
+                'Audio Device Name:\n%s\n' ...
+                'Sampling Rate (Hz): %d\n' ...
+                'bit rate: %d\n' ...
+                'Number of channels: %d\n'], ...
+                app.audio_dev_idx, dev_name, app.audio_srate, app.audio_bit_rate, app.num_audio_channels);                
+            end
+            uialert(app.UIFigure, msg, title, 'icon', 'info');             
+        end
+
+        % Menu selected function: Mn_About
+        function Mn_AboutMenuSelected(app, event)
+            if app.flag_busy, return;end
+            title = '';
+            sinceYear = 2023;
+            currentYear = year(datetime);
+            cInfo = sprintf('Copyright (C) %04d-%04d Wei-Rong Chen', sinceYear, currentYear); 
+            email = '<wei-rong.chen[AT]yale.edu>';
+            licInfo = 'This program is free software under GNU General Public License, version 3. This program is distributed WITHOUT ANY WARRANTY AND SUPPORT. See the GNU General Public License for more details.';
+            msg = sprintf('%s\n Version: %s \n App Path: %s\n Latest Update: %s \n\n %s \n %s\n %s', ...
+            app.AppName, app.Version, app.appPath,  app.Update, cInfo, email, licInfo);  
+            if app.ffmpegFound,  msg = sprintf('%s \n FFMPEG version: %s', msg, app.ffmpegVersion);  end
+            uialert(app.UIFigure, msg, title, 'icon', 'info');  
+        end
+
+        % Value changed function: Ck_ifRecordTelemed
+        function Ck_ifRecordTelemedValueChanged(app, event)
+            if app.isRecording, return;end 
+            initialize(app);
+        end
+
+        % Menu selected function: Mn_AudioSettings
+        function Mn_AudioSettingsMenuSelected(app, event)
+
+            defaultAnswer = {sprintf('%d', app.audio_srate), sprintf('%d', app.num_audio_channels)};
+            questions = {'Audio sampling rate (Hz)', 'Number of audio channels'};
+            answers = inputdlg(questions,...
+             '',1, defaultAnswer);
+            figure(app.UIFigure); % Get focus back to main figure
+            if isempty(answers), return; end % user cancelled
+            app.Msg1.HTMLSource = 'Ready.';
+            %% Samping rate:
+            ans1 = round(str2double(answers{1}));
+            if ~isnan(ans1) && ans1 >= 16000 && ans1 <= 96000
+                app.audio_srate = ans1;
+                app.logMessage(sprintf('Set sampling rate to %d Hz.', ans1), 'info');
+            else
+                app.logMessage('Unsupported sampling rate.', 'warning'); 
+            end %
+            %% Number of audio channels:
+            current_num_audio_channels = app.num_audio_channels; % store the current state of num_audio_channels.
+            ans2 = round(str2double(answers{2}));
+            if isnan(ans2) || ans2 < 1
+                app.Msg1.HTMLSource = ...
+                   sprintf('%s <br> Unsupported number of channels.', app.Msg1.HTMLSource);
+                return
+            end
+            app.num_audio_channels = ans2;
+            [support, msg] = CheckIfAudioDeviceSettingSupported(app);
+            if ~support 
+                app.num_audio_channels = current_num_audio_channels;  % change back to the previous state.
+                UpdateRefreshAudioStatus(app);
+                app.Msg1.HTMLSource = msg; 
+                return; 
+            end 
+            app.Msg1.HTMLSource = ...
+               sprintf('%s <br> Set number of audio channgels to %d.', app.Msg1.HTMLSource, ans2);
+            appSetStatus(app, 'ready');  
+        end
+
+        % Menu selected function: Mn_ConvertTVDtoMP4viaAVI
+        function Mn_ConvertTVDtoVideoMenuSelected(app, event)
+            if app.flag_busy, return; end
+            previous_status = app.status; appSetStatus(app, 'busy'); 
+            [success, msg] = DetectEchoWave(app);   
+            toFormat = event.Source.UserData.toFormat; % mp4 or avi_comp
+            videoExt = strrep(toFormat, '_comp','');
+            if ~success, uialert(app.UIFigure,msg,'EchoWave error'); appSetStatus(app, previous_status); return;end
+           %% Check ffmpeg:
+            app.ffmpegFound = app.hasFFmpegInstalled();
+            if ~app.ffmpegFound
+                msg = {'FFMPEG not found! ', 'TVD will be converted but NOT combined with audio.', 'Synchronized audio will be saved as .flac file.', ' '};
+            else
+                msg = {''};
+            end
+            mask1 = sprintf('%s%s*%s', app.OutputPath, filesep, app.tvdExt);            
+            % mask2 = sprintf('%s%s*%s', app.OutputPath, filesep, app.audioExt);
+            fl = app.mygfl(mask1,0); % fl2 = app.mygfl(mask2,0);
+            % ix = ismember(fl, fl2); 
+            % if ~any(ix), app.Msg1.HTMLSource = 'No TVD files!'; appSetStatus(app, previous_status); return;end
+            if isempty(fl), app.Msg1.HTMLSource = 'No TVD files!'; appSetStatus(app, previous_status); return;end    
+            nfl = numel(fl);
+            %% Confirm:
+            msg = [msg, {sprintf('%d TVD files found.', nfl)}];
+            msg = [msg, {'Video conversion takes very long time.', ...
+                'Remember to max out Echowave resolution', 'and set MP4 bit rate > 8000 Kbps.', 'Continue?'}];
+            selection = uiconfirm(app.UIFigure, msg,'Confirm conversion', 'Icon','warning');
+            switch selection, case 'OK',  case 'Cancel',  appSetStatus(app, previous_status); return; end   
+            %% Create temp folder:
+            tmpPath = fullfile(app.OutputPath, app.tmpFolder);
+            [success, ~]=mkdir(tmpPath);
+            if ~success, uialert(app.UIFigure,'Failed to create temp folder. Access denied!','Error');  appSetStatus(app, previous_status); return;end
+
+            h_prog = uiprogressdlg(app.UIFigure,'Title','Converting TVD to MP4','Cancelable','on');
+            %%
+            for ifl = 1:nfl
+                % Check for Cancel button press
+                if h_prog.CancelRequested,  break;  end
+                fn = fl{ifl}; inFn = fullfile(app.OutputPath, fn); toFn =  fullfile(tmpPath, fn); 
+                % Update progress, report current estimate
+                h_prog.Value = ifl/nfl;  h_prog.Message = sprintf('%d of %d file(s): %s', ifl, nfl, fn);
+                %
+                tvdFN = [inFn, app.tvdExt]; audioFN = [inFn, app.audioExt];
+                tmpTvdFN = fullfile(tmpPath, [fn app.tvdExt]); tmpVideoFN = fullfile(tmpPath, [fn '.' videoExt]); 
+                outVideoFN = fullfile(app.OutputPath, [fn '.' 'mp4']);
+                [status,msg] = copyfile(tvdFN, tmpTvdFN); 
+                info = EchoWaveGetTVDinfo(app,tmpTvdFN);
+                if ~isempty(info) && isfield(info, 'fps') && info.fps > 0, fps = info.fps; else, fps = [];  end
+                ConvertTVDtoVideo(app, tmpPath, toFormat);
+
+                if exist(audioFN, 'file')
+                    sync_channel = app.which_channel_is_telemed_sync; trimmedAudioFN = fullfile(app.OutputPath, [fn '.flac']);
+                    [sig, sr, locs, frameStart] = app.TrimTelemedAudio(audioFN, [], trimmedAudioFN, fps, sync_channel);
+                    
+                    if app.ffmpegFound
+                        [status,cmdout] = app.ffmpegCombineVideoAudio(tmpVideoFN, trimmedAudioFN, outVideoFN);
+                    else
+                        [status,msg] = copyfile(tmpVideoFN, outVideoFN); 
+                    end
+                else
+                    % No audio. TVD only
+                    if app.ffmpegFound
+                         [status,cmdout] = app.ffmpegConvertOneFile_simple(tmpVideoFN, outVideoFN);
+                     else
+                        [status,msg] = copyfile(tmpVideoFN, outVideoFN); 
+                    end
+                end
+                delete(tmpTvdFN);   delete(tmpVideoFN); 
+            end   
+            %% Delete temp folder:
+             [success, msg] = app.deleteFolder(tmpPath);           
+            appSetStatus(app, previous_status);
+            close(h_prog);
+        end
+
+        % Menu selected function: Mn_LoadEchoWavePreset
+        function Mn_LoadEchoWavePresetSelected(app, event)
+            if app.flag_busy, return; end
+            if ~app.Ck_ifRecordTelemed.Value, uialert(app.UIFigure, 'CheckBox: "Record Telemed Ultrasound" not selected!', ''); return; end
+            previous_status = app.status; appSetStatus(app, 'busy'); 
+             [success, msg] = DetectEchoWave(app);
+            if ~success, uialert(app.UIFigure,msg, 'EchoWave error');  appSetStatus(app, previous_status); return;end           
+            if ~app.ifProbeConnected, uialert(app.UIFigure, 'Probe not found!', 'EchoWave error'); appSetStatus(app, previous_status); return;end  
+            EchoWaveFreeze(app);
+            beamformer = 'MCE'; probe = 'MC4-2R20S-3';
+            preset_name = 'Haskins Tongue';
+            % filterspec = {fullfile(app.appPath, 'EchoWave_Preset_Haskins_Tongue.dat'),'Preset .dat file'};
+            filterspec = fullfile(app.appPath, '*.dat');
+            [fn, fpath] = uigetfile(filterspec, 'Select preset file');
+            figure(app.UIFigure); % Get focus back to main figure
+            % Make sure user didn't cancel uigetfile dialog
+            if isequal(fn,0),   appSetStatus(app, previous_status); figure(app.UIFigure);  return; end  
+            [~,~,e]=fileparts(fn); 
+            if ~strcmpi(e, '.dat'), uialert(app.UIFigure, 'Wrong EchoWave preset file!','Error');appSetStatus(app, previous_status); figure(app.UIFigure); return; end 
+            preset_FullFName = fullfile(fpath, fn);
+            cmd = sprintf('%s -import_presets %s "%s" %s "%s"', ...
+                app.EchoWaveCmd, beamformer, preset_FullFName, probe, preset_name);
+            [status,cmdout] = system(cmd, '-echo'); %#ok<*ASGLU> 
+            cmd = sprintf('%s -apply_preset "%s"', ...
+                app.EchoWaveCmd, preset_name);
+            [status,cmdout] = system(cmd, '-echo'); %#ok<*ASGLU> 
+            EchoWaveFreeze(app);
+             appSetStatus(app, previous_status);
+        end
+
+        % Menu selected function: Mn_CheckFFMPEG
+        function Mn_CheckFFMPEGMenuSelected(app, event)
+            if app.flag_busy, return;end
+            [found, cmdout] = app.hasFFmpegInstalled();  title = 'Check FFMPG'; msg = cmdout; uialert(app.UIFigure, msg, title, 'icon', 'info');                
+        end
+
+        % Callback function
+        function Ck_(app, event)
+            value = app.Ck_ifRecordOptitrack.Value;
+            
+        end
+
+        % Callback function
+        function Ck_ifRecordOp(app, event)
+            value = app.Ck_ifRecordOptitrack.Value;
+            
+        end
+
+        % Value changed function: Ck_ifRecordOptitrack
+        function Ck_ifRecordOptitrackValueChanged(app, event)
+            value = app.Ck_ifRecordOptitrack.Value;
+            % Only check when user manually enables it
+            if value
+                if isMotiveRunning(app)
+                    app.logMessage('✅ Motive is running and ready for OptiTrack recording.', 'info');
+                else
+                    app.logMessage('⚠️ Motive (OptiTrack) is NOT running. Please start Motive before recording.', 'warning');
+                end
+            else
+                app.logMessage('OptiTrack recording disabled.', 'info');
+            end
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.AutoResizeChildren = 'off';
+            app.UIFigure.Position = [100 100 513 357];
+            app.UIFigure.Name = 'MATLAB App';
+            app.UIFigure.Resize = 'off';
+            app.UIFigure.CloseRequestFcn = createCallbackFcn(app, @UIFigureCloseRequest, true);
+
+            % Create Mn_Setting
+            app.Mn_Setting = uimenu(app.UIFigure);
+            app.Mn_Setting.Text = 'Setting';
+
+            % Create Mn_SetMaxTimeOut
+            app.Mn_SetMaxTimeOut = uimenu(app.Mn_Setting);
+            app.Mn_SetMaxTimeOut.MenuSelectedFcn = createCallbackFcn(app, @Mn_SetMaxTimeOutMenuSelected, true);
+            app.Mn_SetMaxTimeOut.Text = 'Set max time out';
+
+            % Create Mn_SelectAudioDevice
+            app.Mn_SelectAudioDevice = uimenu(app.Mn_Setting);
+            app.Mn_SelectAudioDevice.MenuSelectedFcn = createCallbackFcn(app, @Mn_SelectAudioDeviceSelected, true);
+            app.Mn_SelectAudioDevice.Text = 'Select audio device';
+
+            % Create Mn_AudioSettings
+            app.Mn_AudioSettings = uimenu(app.Mn_Setting);
+            app.Mn_AudioSettings.MenuSelectedFcn = createCallbackFcn(app, @Mn_AudioSettingsMenuSelected, true);
+            app.Mn_AudioSettings.Text = 'Audio settings';
+
+            % Create Mn_Tools
+            app.Mn_Tools = uimenu(app.UIFigure);
+            app.Mn_Tools.Text = 'Tools';
+
+            % Create Mn_ConvertTVDtoMP4viaAVI
+            app.Mn_ConvertTVDtoMP4viaAVI = uimenu(app.Mn_Tools);
+            app.Mn_ConvertTVDtoMP4viaAVI.MenuSelectedFcn = createCallbackFcn(app, @Mn_ConvertTVDtoVideoMenuSelected, true);
+            app.Mn_ConvertTVDtoMP4viaAVI.Tooltip = {'Convert TVD to AVI in EchoWave. Then combine AVI and audio to MP4 with FFMPEG.'};
+            app.Mn_ConvertTVDtoMP4viaAVI.Text = 'Convert All TVD to MP4 (via AVI)';
+
+            % Create Mn_LoadEchoWavePreset
+            app.Mn_LoadEchoWavePreset = uimenu(app.Mn_Tools);
+            app.Mn_LoadEchoWavePreset.MenuSelectedFcn = createCallbackFcn(app, @Mn_LoadEchoWavePresetSelected, true);
+            app.Mn_LoadEchoWavePreset.Text = 'Load EchoWave Preset';
+
+            % Create Mn_Info
+            app.Mn_Info = uimenu(app.UIFigure);
+            app.Mn_Info.Text = 'Info';
+
+            % Create Mn_AudioInfo
+            app.Mn_AudioInfo = uimenu(app.Mn_Info);
+            app.Mn_AudioInfo.MenuSelectedFcn = createCallbackFcn(app, @Mn_AudioInfoMenuSelected, true);
+            app.Mn_AudioInfo.Text = 'Audio Info';
+
+            % Create Mn_CheckFFMPEG
+            app.Mn_CheckFFMPEG = uimenu(app.Mn_Info);
+            app.Mn_CheckFFMPEG.MenuSelectedFcn = createCallbackFcn(app, @Mn_CheckFFMPEGMenuSelected, true);
+            app.Mn_CheckFFMPEG.Text = 'Check FFMPEG';
+
+            % Create Mn_About
+            app.Mn_About = uimenu(app.Mn_Info);
+            app.Mn_About.MenuSelectedFcn = createCallbackFcn(app, @Mn_AboutMenuSelected, true);
+            app.Mn_About.Text = 'About MewRecorder';
+
+            % Create Pn_Filename
+            app.Pn_Filename = uipanel(app.UIFigure);
+            app.Pn_Filename.AutoResizeChildren = 'off';
+            app.Pn_Filename.Position = [7 230 493 80];
+
+            % Create FilenameprefixLabel
+            app.FilenameprefixLabel = uilabel(app.Pn_Filename);
+            app.FilenameprefixLabel.HorizontalAlignment = 'right';
+            app.FilenameprefixLabel.Position = [1 54 104 22];
+            app.FilenameprefixLabel.Text = 'Filename:   prefix=';
+
+            % Create Ed_FilePrefix
+            app.Ed_FilePrefix = uieditfield(app.Pn_Filename, 'text');
+            app.Ed_FilePrefix.ValueChangedFcn = createCallbackFcn(app, @Ed_FilePrefixValueChanged, true);
+            app.Ed_FilePrefix.Position = [109 54 131 22];
+            app.Ed_FilePrefix.Value = 'recording';
+
+            % Create Ck_AppendDate
+            app.Ck_AppendDate = uicheckbox(app.Pn_Filename);
+            app.Ck_AppendDate.ValueChangedFcn = createCallbackFcn(app, @Ed_FilePrefixValueChanged, true);
+            app.Ck_AppendDate.Tooltip = {'Append date to filename.'};
+            app.Ck_AppendDate.Text = 'append date';
+            app.Ck_AppendDate.Position = [251 54 89 22];
+            app.Ck_AppendDate.Value = true;
+
+            % Create Ck_AppendTime
+            app.Ck_AppendTime = uicheckbox(app.Pn_Filename);
+            app.Ck_AppendTime.ValueChangedFcn = createCallbackFcn(app, @Ed_FilePrefixValueChanged, true);
+            app.Ck_AppendTime.Tooltip = {'Append recording started time stamp to filename.'};
+            app.Ck_AppendTime.Text = 'append time';
+            app.Ck_AppendTime.Position = [343 54 88 22];
+            app.Ck_AppendTime.Value = true;
+
+            % Create FilenameLabel
+            app.FilenameLabel = uilabel(app.Pn_Filename);
+            app.FilenameLabel.HorizontalAlignment = 'right';
+            app.FilenameLabel.Position = [1 29 61 22];
+            app.FilenameLabel.Text = 'Filename=';
+
+            % Create Ed_Filename
+            app.Ed_Filename = uieditfield(app.Pn_Filename, 'text');
+            app.Ed_Filename.Editable = 'off';
+            app.Ed_Filename.Enable = 'off';
+            app.Ed_Filename.Position = [68 29 417 22];
+
+            % Create AnnotateEditFieldLabel
+            app.AnnotateEditFieldLabel = uilabel(app.Pn_Filename);
+            app.AnnotateEditFieldLabel.HorizontalAlignment = 'right';
+            app.AnnotateEditFieldLabel.Position = [3 4 58 22];
+            app.AnnotateEditFieldLabel.Text = 'Annotate: ';
+
+            % Create Ed_Annotate
+            app.Ed_Annotate = uieditfield(app.Pn_Filename, 'text');
+            app.Ed_Annotate.Position = [67 4 418 22];
+
+            % Create Bn_Stop
+            app.Bn_Stop = uibutton(app.UIFigure, 'push');
+            app.Bn_Stop.ButtonPushedFcn = createCallbackFcn(app, @Bn_StopPushed, true);
+            app.Bn_Stop.FontWeight = 'bold';
+            app.Bn_Stop.Enable = 'off';
+            app.Bn_Stop.Position = [116 86 100 23];
+            app.Bn_Stop.Text = 'Stop';
+
+            % Create Pn_MsgBox
+            app.Pn_MsgBox = uipanel(app.UIFigure);
+            app.Pn_MsgBox.AutoResizeChildren = 'off';
+            app.Pn_MsgBox.Position = [258 57 242 127];
+
+            % Create Msg1
+            app.Msg1 = uihtml(app.Pn_MsgBox);
+            app.Msg1.Position = [8 8 226 113];
+
+            % Create TimeRecordedLabel
+            app.TimeRecordedLabel = uilabel(app.UIFigure);
+            app.TimeRecordedLabel.HorizontalAlignment = 'right';
+            app.TimeRecordedLabel.Position = [12 54 90 22];
+            app.TimeRecordedLabel.Text = 'Time Recorded:';
+
+            % Create Ed_TimeRecorded
+            app.Ed_TimeRecorded = uieditfield(app.UIFigure, 'text');
+            app.Ed_TimeRecorded.Editable = 'off';
+            app.Ed_TimeRecorded.FontColor = [1 1 1];
+            app.Ed_TimeRecorded.BackgroundColor = [0 0 0];
+            app.Ed_TimeRecorded.Position = [110 54 80 22];
+            app.Ed_TimeRecorded.Value = '00:00:00.000';
+
+            % Create Ck_ifNormAudio
+            app.Ck_ifNormAudio = uicheckbox(app.UIFigure);
+            app.Ck_ifNormAudio.Text = 'Normalize audio amplitude';
+            app.Ck_ifNormAudio.Position = [7 156 164 22];
+            app.Ck_ifNormAudio.Value = true;
+
+            % Create Bn_SelectOutputFolder
+            app.Bn_SelectOutputFolder = uibutton(app.UIFigure, 'push');
+            app.Bn_SelectOutputFolder.ButtonPushedFcn = createCallbackFcn(app, @Mn_SelectOutputFolderMenuSelected, true);
+            app.Bn_SelectOutputFolder.HorizontalAlignment = 'left';
+            app.Bn_SelectOutputFolder.Tooltip = {'Click to select folder.'};
+            app.Bn_SelectOutputFolder.Position = [86 327 414 20];
+            app.Bn_SelectOutputFolder.Text = 'output folder';
+
+            % Create CurrentfolderLabel
+            app.CurrentfolderLabel = uilabel(app.UIFigure);
+            app.CurrentfolderLabel.Position = [5 326 82 22];
+            app.CurrentfolderLabel.Text = 'Current folder:';
+
+            % Create Lb_MaxTimeOut
+            app.Lb_MaxTimeOut = uilabel(app.UIFigure);
+            app.Lb_MaxTimeOut.Position = [33 33 134 22];
+            app.Lb_MaxTimeOut.Text = 'Max time out = 00:00:00';
+
+            % Create Ck_RecordByDur
+            app.Ck_RecordByDur = uicheckbox(app.UIFigure);
+            app.Ck_RecordByDur.ValueChangedFcn = createCallbackFcn(app, @Ck_RecordByDurValueChanged, true);
+            app.Ck_RecordByDur.Text = 'Record by duration (sec.): ';
+            app.Ck_RecordByDur.Position = [7 113 163 22];
+
+            % Create Ed_RecordDur
+            app.Ed_RecordDur = uieditfield(app.UIFigure, 'numeric');
+            app.Ed_RecordDur.Limits = [0.5 7200];
+            app.Ed_RecordDur.ValueDisplayFormat = '%11.1f';
+            app.Ed_RecordDur.Position = [164 113 52 22];
+            app.Ed_RecordDur.Value = 5;
+
+            % Create Ck_ifRecordTelemed
+            app.Ck_ifRecordTelemed = uicheckbox(app.UIFigure);
+            app.Ck_ifRecordTelemed.ValueChangedFcn = createCallbackFcn(app, @Ck_ifRecordTelemedValueChanged, true);
+            app.Ck_ifRecordTelemed.Tooltip = {'Record Telemed ultrasound video via EchoWave'};
+            app.Ck_ifRecordTelemed.Text = 'Record Telemed Ultrasound';
+            app.Ck_ifRecordTelemed.Position = [7 179 171 22];
+
+            % Create Lb_AudioSettings
+            app.Lb_AudioSettings = uilabel(app.UIFigure);
+            app.Lb_AudioSettings.Position = [7 137 158 22];
+            app.Lb_AudioSettings.Text = 'Num audio channels = 2';
+
+            % Create Bn_Record
+            app.Bn_Record = uibutton(app.UIFigure, 'state');
+            app.Bn_Record.ValueChangedFcn = createCallbackFcn(app, @StartRecordButtonPushed, true);
+            app.Bn_Record.BusyAction = 'cancel';
+            app.Bn_Record.Text = 'Start Record';
+            app.Bn_Record.Position = [12 86 100 23];
+
+            % Create Lp_AudSig4
+            app.Lp_AudSig4 = uilamp(app.UIFigure);
+            app.Lp_AudSig4.Position = [104 15 10 10];
+            app.Lp_AudSig4.Color = [0 0 0];
+
+            % Create Lp_AudSig3
+            app.Lp_AudSig3 = uilamp(app.UIFigure);
+            app.Lp_AudSig3.Position = [81 15 10 10];
+            app.Lp_AudSig3.Color = [0 0 0];
+
+            % Create Lp_AudSig2
+            app.Lp_AudSig2 = uilamp(app.UIFigure);
+            app.Lp_AudSig2.Position = [57 15 10 10];
+            app.Lp_AudSig2.Color = [0 0 0];
+
+            % Create Lp_AudSig1
+            app.Lp_AudSig1 = uilamp(app.UIFigure);
+            app.Lp_AudSig1.Position = [34 15 10 10];
+            app.Lp_AudSig1.Color = [0 0 0];
+
+            % Create Pn_Msg_AudioDevice
+            app.Pn_Msg_AudioDevice = uihtml(app.UIFigure);
+            app.Pn_Msg_AudioDevice.Position = [259 188 241 37];
+
+            % Create Ck_ifRecordOptitrack
+            app.Ck_ifRecordOptitrack = uicheckbox(app.UIFigure);
+            app.Ck_ifRecordOptitrack.ValueChangedFcn = createCallbackFcn(app, @Ck_ifRecordOptitrackValueChanged, true);
+            app.Ck_ifRecordOptitrack.Tooltip = {'Record Telemed ultrasound video via EchoWave'};
+            app.Ck_ifRecordOptitrack.Text = 'Record OptiTrack';
+            app.Ck_ifRecordOptitrack.Position = [7 203 116 22];
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = MewRecorder
+
+            runningApp = getRunningApp(app);
+
+            % Check for running singleton app
+            if isempty(runningApp)
+
+                % Create UIFigure and components
+                createComponents(app)
+
+                % Register the app with App Designer
+                registerApp(app, app.UIFigure)
+
+                % Execute the startup function
+                runStartupFcn(app, @startupFcn)
+            else
+
+                % Focus the running singleton app
+                figure(runningApp.UIFigure)
+
+                app = runningApp;
+            end
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
