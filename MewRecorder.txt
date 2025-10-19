@@ -1,13 +1,3 @@
-mcc -m -W WinMain:MewRecorder -T link:exe MewRecorder.mlapp ...
-    -a "C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.dll" ...
-    -a "C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNetSDK\Samples\Matlab\natnet.p" ...
-    -d "compiled_251013"
-
-
-
-====
-
-
 classdef MewRecorder < matlab.apps.AppBase
 
     % Properties that correspond to app components
@@ -72,16 +62,21 @@ classdef MewRecorder < matlab.apps.AppBase
         appStartUpTime = []; recordStartTime = []; recordStopTime = [];  recordStartTimeStr = ''; recordStopTimeStr = ''
         audioExt = '.wav'; tvdExt = '.tvd';
         audio_dev_idx = 2; audio_dev_name ='';   % Default audio device = 0
-        audio_srate = 44100;  num_audio_channels = 2;  audio_bit_rate = 16; 
-        max_audio_sig_lamps = 3; % max # of lamps shown in the audio panel        
-        recordingTimer = []; timerPeriod = 0.070;      
-        save_file_prefix = ''; FullPathFilename = ''; AudioFullPathFilename = ''; TvdFullPathFilename = ''; 
+        audio_srate = 44100;  num_audio_channels = 4;  audio_bit_rate = 16;
+        max_audio_sig_lamps = 3; % max # of lamps shown in the audio panel
+        recordingTimer = []; timerPeriod = 0.070;
+        save_file_prefix = ''; FullPathFilename = ''; AudioFullPathFilename = ''; TvdFullPathFilename = '';
         audioRecObj = []; asmcmd = []; EchoWavePath = []; EchoWaveCmd = [];
         dateFormat = 'yyyy-MM-dd'; timeFormat = 'HH-mm-ss-SSS';
         tmpFolder = '_mwr_tmp_mwr'; tmpFile = '_mwr_tmp_mwr_test.txt';
         %% For Boram's Voicelab setting ONLY
-        which_channel_is_telemed_sync = 3; 
-        which_channel_is_optitrack_sync = 3;
+        % Hardware channel mapping (Focusrite 4-channel input):
+        %   Channel 1: Microphone audio
+        %   Channel 2: Telemed/Ultrasound sync signal
+        %   Channel 3: (unused - no signal)
+        %   Channel 4: OptiTrack sync signal
+        which_channel_is_telemed_sync = 2;
+        which_channel_is_optitrack_sync = 4;
         audioReader      % audioDeviceReader handle (if used)
         audioData        % buffered samples (for WASAPI)
         audioTimer       % background timer (for WASAPI)
@@ -302,80 +297,31 @@ classdef MewRecorder < matlab.apps.AppBase
                 addpath(fullp);
             end
         end
-
-        % Function to get dll path for OptiTrack
-        % function dllFile = getNatNetDLLPath(app)
-        %     % getNatNetDLLPath
-        %     % Safely locate the NatNetML.dll file for both MATLAB and compiled exe.
-        %     % Priority order:
-        %     %   (1) Deployed exe → ctfroot/NatNet_SDK_4.3/...
-        %     %   (2) Dev absolute path (your GitHub repo)
-        %     %   (3) Relative fallback near app source folder
-        %     %
-        %     % Returns: full absolute path to NatNetML.dll
-        %     %
-        %     % 2025-10-08 — Cleaned for MewRecorder standalone compatibility
-        % 
-        %     % === Define standard SDK relative layout ===
-        %     relDLL = fullfile('NatNet_SDK_4.3','NatNetSDK','lib','x64','NatNetML.dll');
-        % 
-        %     % === Case 1: Running from deployed exe ===
-        %     if isdeployed
-        %         dllFile = fullfile(ctfroot, 'MewRecorder', relDLL);
-        % 
-        %     % === Case 2: Running inside MATLAB (developer mode) ===
-        %     else
-        %         % Absolute development path on your machine
-        %         devAbs = 'C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.dll';
-        %         if exist(devAbs, 'file')
-        %             dllFile = devAbs;
-        %         else
-        %             % Try relative to this class file (useful on another dev machine)
-        %             here = fileparts(mfilename('fullpath'));
-        %             alt = fullfile(here, relDLL);
-        %             if exist(alt, 'file')
-        %                 dllFile = alt;
-        %             else
-        %                 error('NatNetML.dll not found in expected locations.\nChecked:\n  %s\n  %s', devAbs, alt);
-        %             end
-        %         end
-        %     end
-        % 
-        %     % === Verify existence and normalize ===
-        %     if ~exist(dllFile, 'file')
-        %         error('NatNetML.dll not found at: %s', dllFile);
-        %     end
-        % 
-        %     % Normalize path (remove .. and relative elements)
-        %     dllFile = string(java.io.File(dllFile).getCanonicalPath());
-        % end
+        % Set NatNet dll files properly for dev/deploy version
+        % note that compiled cache directory needs 'MewRecorder' between
+        % ctfroot and relDLL
         function dllFile = getNatNetDLLPath(app)
             try
-                srcDll = 'C:\Users\Boram Kim\GitHub\MewRecorder\NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.dll';
+                relDLL = fullfile('NatNet_SDK_4.3','NatNetSDK','lib','x64','NatNetML.dll');
                 if isdeployed
-                    % Path where Runtime extracts files
-                    dllFile = fullfile(ctfroot, 'NatNetML.dll');
-                    if ~isfile(dllFile)
-                        copyfile(srcDll, dllFile);
-                    end
-
-                    % === Unblock DLL (Windows adds "Zone.Identifier") ===
-                    try
-                        % Remove zone identifier if exists
-                        system(sprintf('powershell -Command "Unblock-File -Path ''%s''"', dllFile));
-                    catch
-                        % ignore PowerShell absence
-                    end
-
+                    % Correct path inside deployed CTF (Most Crucial!)
+                    dllFile = fullfile(ctfroot, 'MewRecorder', relDLL);
                 else
-                    dllFile = srcDll;
+                    % Developer absolute path
+                    dllFile = fullfile('C:\Users','Boram Kim','GitHub','MewRecorder',relDLL);
                 end
-
+        
+                if ~isfile(dllFile)
+                    error('NatNetML.dll not found at %s', dllFile);
+                end
+        
                 fprintf('[DLL Loader] Using DLL path: %s\n', dllFile);
+                NET.addAssembly(dllFile);
             catch ME
                 warning('❌ Failed to load NatNetML.dll: %s', ME.message);
             end
         end
+
 
         function [success, msg] = sendMotiveCommand(app, cmd)
         % sendMotiveCommand  Send remote command to Motive over TCP
@@ -416,7 +362,7 @@ classdef MewRecorder < matlab.apps.AppBase
         %%
         function success = SaveAudio(app)
             success = false;
-            try 
+            try
                 if isrecording(app.audioRecObj), stop(app.audioRecObj);end
                 s = getaudiodata(app.audioRecObj);
                 delete(app.audioRecObj);
@@ -424,14 +370,33 @@ classdef MewRecorder < matlab.apps.AppBase
                 delete(app.audioRecObj);
             end
             nChannels = size(s, 2);
+
+            % Remap 4-channel input to 3-channel output:
+            % Input:  Ch1=Audio, Ch2=Telemed sync, Ch3=(unused), Ch4=OptiTrack sync
+            % Output: Ch1=Audio, Ch2=Telemed sync, Ch3=OptiTrack sync
+            if nChannels >= 4
+                s_output = [s(:,1), s(:,app.which_channel_is_telemed_sync), s(:,app.which_channel_is_optitrack_sync)];
+                app.logMessage(sprintf('Remapped %d channels to 3-channel output (Audio, Telemed sync, OptiTrack sync)', nChannels), 'info');
+            elseif nChannels >= 3
+                % Fallback: if only 3 channels available, assume Ch3 is Telemed sync
+                s_output = [s(:,1), s(:,app.which_channel_is_telemed_sync), zeros(size(s,1),1)];
+                app.logMessage(sprintf('Warning: Only %d channels recorded. OptiTrack sync channel will be silent.', nChannels), 'warning');
+            else
+                % Fallback: save as-is if fewer than 3 channels
+                s_output = s;
+                app.logMessage(sprintf('Warning: Only %d channels recorded. Saving as-is.', nChannels), 'warning');
+            end
+
+            % Normalize each output channel if requested
             if app.Ck_ifNormAudio.Value
-                for i = 1:nChannels
-                    s1 = s(:,i); s1 = s1 - mean(s1); 
-                    s1 = s1 ./ max(abs(s1)); s(:,i) = s1;
+                for i = 1:size(s_output, 2)
+                    s1 = s_output(:,i); s1 = s1 - mean(s1);
+                    s1 = s1 ./ max(abs(s1)); s_output(:,i) = s1;
                 end
             end
+
             try
-                audiowrite(app.AudioFullPathFilename, s , app.audio_srate);
+                audiowrite(app.AudioFullPathFilename, s_output, app.audio_srate);
             catch
                 success = false;  return;
             end
@@ -888,29 +853,31 @@ classdef MewRecorder < matlab.apps.AppBase
         end %deleteFolder
         %%    
         function [sig, sr, locs, frameStart] = TrimTelemedAudio(FName, resampleRate, outFName, fps, sync_channel)
-        % Trim the begining of Telemed two-channel audio, using the sync-pulse
-        % signals. 
-        % WR Chen 19DEC2022
+        % Trim the begining of Telemed audio using the sync-pulse signals.
+        % Now works with 3-channel audio: Ch1=Audio, Ch2=Telemed sync, Ch3=OptiTrack sync
+        % WR Chen 19DEC2022 | Updated for 3-channel format 2025
         if nargin < 2, resampleRate = [];end
         if nargin < 3, outFName = []; end
         if nargin < 4, fps = []; end
-        if nargin < 5 || isempty(sync_channel), sync_channel =2; end
+        if nargin < 5 || isempty(sync_channel), sync_channel = 2; end  % Default: Ch2 = Telemed sync
         if isempty(fps), max_fps = 300; else, max_fps = fps * 1.3; end
         [locs, audio, syncs, sr] = ParseTelemedSyncPulse(FName, sync_channel, max_fps);
-        nSamplesAudio = size(audio,1); 
+        nSamplesAudio = size(audio,1);
         frameStart = mean(locs(1:2)); % Get the midpoint between the time of starting scanning and the completion of scanning first frame.
-        frameDur = median(diff(locs(2:end))); 
-        frameEnd = locs(end) + frameDur; 
+        frameDur = median(diff(locs(2:end)));
+        frameEnd = locs(end) + frameDur;
         frameStartN = floor(frameStart * sr)+1;
-        frameEndN = floor(frameEnd * sr)+1;  
+        frameEndN = floor(frameEnd * sr)+1;
         if frameEndN > nSamplesAudio, frameEndN = nSamplesAudio; end
         sig = audio(frameStartN:frameEndN);
         if ~isempty(resampleRate),  sig = resample(sig, resampleRate,sr); sr = resampleRate; end
         if ~isempty(outFName), audiowrite(outFName, sig, sr); end
             function [locs, audio, syncs, sr] = ParseTelemedSyncPulse(FName, sync_channel, max_fps)
-                if nargin < 2, sync_channel = 2;end
-                if nargin < 3 || isempty(max_fps), max_fps = 300; end 
-                if sync_channel == 2, audio_channel = 1; else, audio_channel = 2; end
+                % Parse sync pulses from 3-channel WAV file
+                % Ch1=Audio, Ch2=Telemed sync, Ch3=OptiTrack sync
+                if nargin < 2, sync_channel = 2; end  % Default: Ch2 = Telemed sync
+                if nargin < 3 || isempty(max_fps), max_fps = 300; end
+                audio_channel = 1;  % Audio is always channel 1 in the 3-channel output
                 [s, sr]= audioread(FName); nChannels = size(s,2);
                 for i = 1:nChannels, s1 = s(:,i); s(:,i) = s1 ./ max(abs(s1)); end
                 audio = s(:,audio_channel); syncs = s(:,sync_channel); 
@@ -1393,7 +1360,26 @@ classdef MewRecorder < matlab.apps.AppBase
 
         % Value changed function: Ck_ifRecordTelemed
         function Ck_ifRecordTelemedValueChanged(app, event)
-            if app.isRecording, return;end 
+            if app.isRecording, return;end
+            % initialize(app);
+            value = app.Ck_ifRecordTelemed.Value;
+            if value
+                % Check Telemed EchoWave status when enabled
+                [success, msg] = DetectEchoWave(app);
+                if success
+                    if app.ifProbeConnected
+                        app.logMessage('✅ Telemed EchoWave is connected and probe detected.','info');
+                    else
+                        app.logMessage('⚠️ Telemed EchoWave connected but probe NOT detected.','warning');
+                    end
+                else
+                    app.logMessage(['⚠️ Telemed EchoWave initialization failed: ', msg], 'error');
+                end
+            else
+                app.logMessage('Telemed ultrasound recording disabled.', 'info');
+            end
+
+            % Continue with full initialization
             initialize(app);
         end
 
@@ -1487,7 +1473,9 @@ classdef MewRecorder < matlab.apps.AppBase
                 ConvertTVDtoVideo(app, tmpPath, toFormat);
 
                 if exist(audioFN, 'file')
-                    sync_channel = app.which_channel_is_telemed_sync; trimmedAudioFN = fullfile(app.OutputPath, [fn '.flac']);
+                    % Note: In the 3-channel output WAV, Telemed sync is channel 2 (not hardware channel 3)
+                    sync_channel = 2;  % Ch2 = Telemed sync in the saved 3-channel WAV file
+                    trimmedAudioFN = fullfile(app.OutputPath, [fn '.flac']);
                     [sig, sr, locs, frameStart] = app.TrimTelemedAudio(audioFN, [], trimmedAudioFN, fps, sync_channel);
                     
                     if app.ffmpegFound

@@ -9,7 +9,8 @@ MewRecorder is a MATLAB-based multimodal recording application for synchronized 
 - **Multi-channel audio** (up to 4 channels)
 - **3D motion tracking** via OptiTrack NatNet SDK
 
-Current version: v1.3.1 (October 2025)
+Current version: v1.3.2-dev (January 2025)
+**In Progress:** 4-channel WASAPI recording with 3-channel sync output
 
 ## Commands
 
@@ -76,9 +77,9 @@ mcc -m -W WinMain:MewRecorder -T link:exe 'MewRecorder.mlapp' ...
 - `ffmpegCombineVideoAudio()`: Merges streams into MP4
 
 ### File Output Structure
-- `.wav`: Normalized multi-channel audio
+- `.wav`: **3-channel audio** (Ch1: Audio, Ch2: Telemed sync, Ch3: OptiTrack sync)
 - `.tvd`: Telemed native ultrasound cine files
-- `.csv/.mat`: OptiTrack 3D marker trajectories (planned)
+- `.mat`: OptiTrack 3D marker trajectories (via NatNet)
 - `.mp4`: Combined ultrasound video + synchronized audio
 - `_MewRecorder.log`: Session metadata and timestamps
 
@@ -132,6 +133,39 @@ mcc -m -W WinMain:MewRecorder -T link:exe 'MewRecorder.mlapp' ...
 - Compiled executables preserved for distribution
 - Clean separation between source and build artifacts via `.gitignore`
 
+## Audio Sync Signal Architecture (NEW - January 2025)
+
+### Hardware Setup
+**Focusrite Scarlett 4i4** captures 4 input channels:
+- **Channel 1**: Microphone audio
+- **Channel 2**: Telemed/Ultrasound sync signal (hardware-generated pulse)
+- **Channel 3**: (unused)
+- **Channel 4**: OptiTrack sync signal (hardware-generated pulse)
+
+### Recording Configuration
+- **Input**: 4 channels via WASAPI driver (Windows DirectSound limited to 2 channels)
+- **Output**: 3 channels saved to WAV file
+  - Ch1: Audio (from hardware Ch1)
+  - Ch2: Telemed sync (from hardware Ch2)
+  - Ch3: OptiTrack sync (from hardware Ch4)
+
+### Sync Signal Processing
+- **Hardware sync generation**: Telemed and OptiTrack devices send TTL pulses to Focusrite inputs
+- **Recording**: All 4 channels captured via `audioDeviceReader` (WASAPI)
+- **Post-processing**: `TrimTelemedAudio()` analyzes Ch2 sync pulses via `findpeaks()` to detect frame timing
+- **Future**: OptiTrack sync processing can be added similarly using Ch3
+
+### Key Properties
+```matlab
+num_audio_channels = 4  % Record all 4 hardware channels
+which_channel_is_telemed_sync = 2    % Hardware input channel
+which_channel_is_optitrack_sync = 4  % Hardware input channel
+```
+
+### Implementation Files
+- `updates.md`: Initial 3-channel format changes
+- `updates_wasapi.md`: WASAPI driver enablement for 4-channel capture
+
 ## Known Issues
 
 ### NatNet SDK Path Issues in Standalone Build ✓ RESOLVED
@@ -160,3 +194,52 @@ mcc -m -W WinMain:MewRecorder -T link:exe 'MewRecorder.mlapp' ...
 - **Remote Development**: Code changes must be manually transferred via Parsec remote desktop
 - **Hardware Dependencies**: Full testing requires physical lab setup with specialized hardware
 - **Platform Limitation**: Development and deployment restricted to Windows due to hardware dependencies
+
+## Current TODO (January 2025)
+
+### 🔴 HIGH PRIORITY - In Progress
+- [ ] **Apply WASAPI changes from `updates_wasapi.md`**
+  - Currently: Code written but not yet applied to MewRecorder.mlapp
+  - Reason: Enables true 4-channel recording from Focusrite 4i4
+  - Expected result: "Recording via WASAPI (4 ch)." message on recording start
+  - Files: See `updates_wasapi.md` for complete change list
+
+### 🟡 MEDIUM PRIORITY - Testing
+- [ ] **Test 4-channel WASAPI recording**
+  - Verify all 4 audio lamps light up (Ch1, Ch2, Ch4)
+  - Check saved WAV files have exactly 3 channels
+  - Validate Telemed sync (Ch2) contains pulses
+  - Validate OptiTrack sync (Ch3) contains pulses
+  - Run `audioread()` to inspect channel data
+
+- [ ] **Test TrimTelemedAudio with new format**
+  - Confirm sync pulse detection works with Ch2
+  - Check frame timing calculation accuracy
+  - Verify trimmed audio aligns with ultrasound video
+
+- [ ] **Test video conversion pipeline**
+  - Record sample with all modalities enabled
+  - Run "Convert TVD to Video" function
+  - Confirm MP4 output has synchronized audio
+
+### 🟢 LOW PRIORITY - Future Enhancements
+- [ ] **Add OptiTrack sync processing function**
+  - Create `TrimOptiTrackData()` similar to `TrimTelemedAudio()`
+  - Use Ch3 sync pulses to timestamp OptiTrack marker data
+  - Align OptiTrack .mat file with ultrasound video timing
+
+- [ ] **Add sync signal visualization**
+  - Real-time waveform display during recording
+  - Show pulse detection in GUI
+  - Help debug sync signal issues
+
+- [ ] **Document WASAPI fallback behavior**
+  - What happens if WASAPI fails?
+  - How to troubleshoot driver issues?
+  - Alternative configurations for different audio interfaces
+
+### ⚠️ Known Limitations
+- **Windows DirectSound**: Only exposes 2 channels from Focusrite 4i4
+- **WASAPI Requirement**: Needs Audio Toolbox license
+- **Audio Device Name**: Must be set correctly for WASAPI to work
+- **Channel 3 Empty**: Hardware input Ch3 has no signal (intentional)
