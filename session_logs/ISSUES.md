@@ -18,6 +18,62 @@
     - When in 'deployed mode' the ctfroot becomes "C:\Users\Boram Kim\AppData\Local\MathWorks\MatlabRuntimeCache\R2025b\MewRec13"
 
 ## Issues
-- NatNet SDK is used to control OptiTrack, but the path for dll and relevant files are troubling when built standalone
+- [x] Solved on 2025-10-14: NatNet SDK is used to control OptiTrack, but the path for dll and relevant files are troubling when built standalone
     - When run on Matlab, MewRecorder is working fine
     - When built and run as standalone, MewRecorder doesn't seem to find the path correctly.
+- [x] Solved on 2025-10-19: Timer visualization didn't show first 5-7 seconds on initial recording
+    - Root cause: OptiTrack `natnet_client.connect()` blocked timer display loop
+    - Solution: Replaced blocking while loop with background timer
+    - Fixed in v1.3.2 (compiled_251019v6)
+- [x] Solved on 2025-10-20: sync feature: Now I want to implement a feature. I want to record sync signal sent to OptiTrack which is similar to Ultrasound (EchoWave)
+    - See how it is implemented using EchoWave SDKs in MewRecorder.mlapp file (alternatively, MewRecorder.txt)
+    - When the program runs, it automatically catches the sync signal it sends to Ultrasound device and record it as a second channel in the wav file
+    - When the program runs and OptiTrack initiates, I want the pulse signal to be recorded and appended to the third channel of the wav
+    - Those sync signals will be later used to find the starting point in the OptiTrack data and Ultrasound video file.
+    - **Solution**: Implemented 4-channel ASIO recording; OptiTrack sync recorded from hardware Ch4, saved to WAV Ch3. See session_251020.md.
+- [x] Solved on 2025-10-20: app issue: now when recording began, it freezes. It doesn't move on after "[12:58:10] OptiTrack recording started"
+    - I think I found the source of this issue. When error occurs, Matlab does not stop Motiv recording. So Motiv continues to feed in data, which needs to be stopped.
+    - Add a code to check if Motiv is in recording (=previous session didn't close). If it is, make sure stop it and run it
+    - **Solution**: Removed blocking while loop in StartRecordButtonPushed (lines 1336-1430). Moved all cleanup code to Bn_StopPushed. UI now stays responsive during recording. See task_fix_blocking_while_loop.md.
+- [x] Solved on 2025-10-20: roll back sending sync signal (OT)
+    - Remove the code part that sends/records OT signal.
+    - **Solution**: Removed software-generated sync marker code. OptiTrack sync is now received as hardware pulses from Input 3. See task_fix_optitrack_input3.md.
+- [x] Solved on 2025-10-20: update on OT sync pulse receiving
+    - I found that Focusrite input3 is connected to OptiTrack. Optitrack sends a pulse signal via this to the lab computer.
+    - I need to record this signal into the output wav file. Check this.
+    - **Solution**: Changed `which_channel_is_optitrack_sync` from 4 to 3. OptiTrack hardware pulses now recorded in WAV Ch3. See task_fix_optitrack_input3.md.
+- [x] Solved on 2025-10-20: MewRecorder doesn't seem to stand for longer runs or multiple runs in sequence. Timer freezes at ~20 sec. I have to press ctrl+c to stop it.
+    - For example, I tried running 5 sec and it worked. Ran 20 sec and it worked. When I ran for 60 sec, it kind of stopped at 20 sec and froze.
+    - **Root Cause**: Dynamic array growth in `captureAudioFrame` (line 943) becomes extremely slow for large buffers. After ~20 seconds, each append takes longer than the 10ms timer period, causing UpdateRecordingDisplay to timeout and freeze the UI.
+    - **Solution**: Pre-allocate `audioData` buffer for 10 minutes (600 seconds) at startup. Use indexed writes instead of appending. Trim to actual size when saving. See `task_fix_audiodata_preallocation.md`.
+    - **Performance**: Append time reduced from ~50ms (at 3 min) to <0.1ms (constant time). Enables recordings of 60+ minutes without freezing.
+- [x] Solved on 2025-10-20: Lamp visibility issue: Lamp 3 hidden, Lamp 4 shown instead. Lamps don't reset after recording.
+    - **Root Cause**: `max_audio_sig_lamps = 3` limits visibility updates to only 3 lamps. Lamp 3 gets hidden when num_audio_channels=2 at startup, stays hidden even after ASIO sets num_audio_channels=4.
+    - **Solution**: (1) Changed `max_audio_sig_lamps` from 3 to 4, (2) Added `UpdateRefreshAudioStatus(app)` after ASIO init (line 1267), (3) Added `UpdateRefreshAudioStatus(app)` after audiorecorder fallback (line 1313).
+    - **Result**: All 4 lamps now visible during ASIO recording. Lamps 1, 2, 3 light up during recording (have signal), lamp 4 stays dark (no signal).
+- [x] Solved on 2025-10-20: Lamps stay red after recording stops instead of turning gray.
+    - **Root Cause**: Lamps reset at line 1390-1393 BEFORE audioTimer stopped (line 1428). During the gap, audioTimer calls captureAudioFrame every 10ms which detects signal and turns lamps red again.
+    - **Solution**: Moved lamp reset code from lines 1390-1393 to lines 1468-1472 (after audioTimer stopped and frames drained). See `task_fix_lamp_reset_timing.md`.
+    - **Result**: Lamps now properly reset to gray after recording stops. No background timer can turn them red again.
+- [x] Solved on 2025-10-20: Channel info file (*_channels.txt) has outdated channel mapping.
+    - **Root Cause**: SaveAudio function (lines 599-608) wasn't updated when OptiTrack channel changed from 4 to 3. File said "Ch3 unused, Ch4 OptiTrack" but actual hardware is "Ch3 OptiTrack, Ch4 unused".
+    - **Solution**: Updated channel info file generation in SaveAudio. Line 601: Ch3 now says "OptiTrack sync signal". Line 602: Ch4 now says "(unused - no signal)". Line 608: Changed "from hardware Ch4" to "from hardware Ch3". See `task_fix_channel_info_file.md`.
+    - **Result**: Channel documentation now matches actual hardware configuration. Helps with post-processing and data analysis.
+- [x] Solved on 2025-10-20: Memory concern for 60-minute experiments.
+    - **Analysis**: Current 10-min pre-allocation would expand 100 times during 60-min recording, using 8.7 GB with fragmentation risk. With 64GB RAM system, safe but inefficient.
+    - **Solution**: Increased pre-allocation from 600 to 5400 seconds (10 min → 90 min) at line 1279. Uses 7.6 GB upfront (12% of 64GB RAM), no expansions needed.
+    - **Result**: No buffer expansions during 60-min recordings. Constant performance, no fragmentation, 30-min safety margin. See `ANALYSIS_memory_60min.md`.
+- [x] Solved on 2025-10-20: Compiler warning about matlab.addons.installedAddons excluded from MATLAB Runtime.
+    - **Root Cause**: Audio Toolbox check (lines 1291-1292) uses `matlab.addons.installedAddons` which is not available in standalone/deployed apps. MATLAB Compiler warns this will fail in Runtime environment.
+    - **Solution**: Removed addon check entirely. Changed from `if hasAudioToolbox && exist('audioDeviceReader','file')` to just `if exist('audioDeviceReader','file')`. The exist() check is sufficient and works in both MATLAB and deployed mode. Try-catch handles failures gracefully. See `task_fix_deployed_addon_check.md`.
+    - **Result**: Clean compilation without warnings. Works in both MATLAB and standalone modes. Falls back to audiorecorder if audioDeviceReader not available.
+- [x] Solved on 2025-10-20: Second recording freezes after first ASIO failure. Must restart MATLAB to recover.
+    - When ASIO fails on first recording (device busy, etc.), it falls back to audiorecorder (2 channels) and works. But second recording attempt freezes at "Recording..." and never starts.
+    - **Root Cause**: When ASIO initialization fails (line 1289 catch block), the audioReader object is never released, leaving ASIO device locked. Second recording attempt tries to create new audioReader but device is still locked.
+    - **Solution**: Added cleanup code in catch block to release audioReader, clear object, and set useAudioDeviceReader=false. See `task_fix_asio_fallback_cleanup.md`.
+    - **Result**: Can now record multiple times even if ASIO fails. Gracefully falls back to audiorecorder without device locking.
+- [x] Solved on 2025-10-20: WAV file takes couple seconds to save, has long zero period, LED lights don't reset.
+    - After 5-second recording, TVD and TAK files created normally, but WAV file took extra seconds to save. When opened, WAV file had 10 minutes of data (mostly zeros). LED lights 1 & 2 stayed red, LED 4 black.
+    - **Root Causes**: Three bugs: (1) SaveAudio returning entire 10-minute pre-allocated buffer instead of trimming to actual data (line 493), (2) Only 2 of 4 LEDs reset (line 1385), (3) Drain frames using old dynamic append instead of indexed write (lines 1436, 1547).
+    - **Solutions**: (1) Trim buffer: `s = app.audioData(1:app.audioDataIndex, :);`, (2) Reset all 4 LEDs, (3) Use indexed write in drain like captureAudioFrame. See `FIX_wav_delay_zeros_leds.md`.
+    - **Result**: WAV saves fast (<1 sec), correct file size (~4 MB not 847 MB), correct duration (5 sec not 10 min), all 4 LEDs reset properly.  

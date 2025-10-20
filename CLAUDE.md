@@ -1,6 +1,11 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+When creating docs for updates and fixes, make it under session_logs/ with prefix 'task_*'
+
+**IMPORTANT**: All development history and session notes are saved under `session_logs/` as markdown files. Before starting work, always check:
+- `session_logs/SESSION_SUMMARY.md` - Overview of the most recent session
+- Session files with date suffixes (e.g., `session_251012.md`) - Detailed development history
 
 ## Project Overview
 
@@ -9,8 +14,9 @@ MewRecorder is a MATLAB-based multimodal recording application for synchronized 
 - **Multi-channel audio** (up to 4 channels)
 - **3D motion tracking** via OptiTrack NatNet SDK
 
-Current version: v1.3.2-dev (January 2025)
-**In Progress:** 4-channel WASAPI recording with 3-channel sync output
+**Current Version**: v1.3.2 (October 2025)
+**Latest Build**: compiled_251019v6
+**Latest Checkpoint**: MewRecorder_backup_251020v3 (Verified working - All 16 fixes applied)
 
 ## Commands
 
@@ -19,12 +25,13 @@ Current version: v1.3.2-dev (January 2025)
 % Run the application in MATLAB (requires Administrator mode)
 >> MewRecorder
 
-% Compile standalone executable
+% Compile standalone executable (current working version)
 mcc -m -W WinMain:MewRecorder -T link:exe 'MewRecorder.mlapp' ...
-   -a 'libraries/natnet.p' ...
-   -a 'libraries/NatNetML.dll' ...
-   -a 'libraries/' ...
-   -d 'compiled_YYYYMMDD'
+  -a 'NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.dll' ...
+  -a 'NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetLib.dll' ...
+  -a 'NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.xml' ...
+  -a 'NatNet_SDK_4.3\NatNet_SDK_3.1\NatNetSDK\Samples\Matlab\natnet.p' ...
+  -d 'compiled_YYYYMMDD'
 ```
 
 ### System Requirements
@@ -93,153 +100,130 @@ mcc -m -W WinMain:MewRecorder -T link:exe 'MewRecorder.mlapp' ...
 
 ## Development Setup
 
-### Current Development Environment
-**Remote Development Setup**:
-- **Remote lab computer (Windows OS)**:
-  - MATLAB, Motive, EchoWave II, and Focusrite Control 2 installed
-  - MewRecorder running (`MewRecorder.mlapp`)
-  - Hardware devices connected via Focusrite interface (Ultrasound, OptiTrack, Audio)
-  - Sync signal handling through Focusrite, with direct data cable connections
+### Development Environment
+**Remote Lab (Windows)**:
+- MATLAB R2022b+, Motive, EchoWave II, Focusrite Control 2
+- Hardware: Focusrite 4i4 audio interface, OptiTrack cameras, Telemed ultrasound probe
+- Code editing via MATLAB App Designer (`.mlapp` format - cannot edit as text)
 
-- **Local development machine (macOS)**:
-  - CursorAI and Claude Code for planning and coding
-  - Code transfer via manual copy/paste through Parsec remote desktop client
+**Local Machine (macOS)**:
+- Code planning via CursorAI/Claude Code
+- Remote access via Parsec (manual copy/paste for code transfer)
 
-### Prerequisites for Development
-1. Install Telemed EchoWave II software
-2. Register `AutoInt1Client.dll` (requires Admin CMD)
-3. Configure EchoWave RAM allocation (minimum 5GB)
-4. Install FFmpeg in system PATH
-5. Run MATLAB in Administrator mode
+### Prerequisites
+1. Install Telemed EchoWave II, register `AutoInt1Client.dll` (Admin CMD), allocate 5GB+ RAM
+2. Install FFmpeg to system PATH
+3. Run MATLAB in **Administrator mode** (required for hardware COM automation)
 
-### Code Editing
-- Main code is in `MewRecorder.mlapp` (App Designer format)
-- Cannot be edited as plain text - requires MATLAB App Designer
-- All GUI components and callbacks are contained within this single file
+### Build & Testing
+- **Compile**: Use `mcc` command (see Commands section), include all OptiTrack SDK DLLs
+- **Testing**: Requires full hardware setup; audio-only testing possible without specialized devices
+- **Version Control**: Backup `.mlapp` files, preserve compiled executables in `compiled_YYYYMMDD/`
 
-### Build Process
-- Uses MATLAB Compiler (`mcc`) to create standalone executable
-- Must include OptiTrack SDK libraries in compilation
-- Output directory follows `compiled_YYYYMMDD` naming convention
+## Audio Sync Signal Architecture
 
-### Testing
-- Requires hardware connections for full testing
-- EchoWave II software must be running for ultrasound features
-- OptiTrack Motive software required for motion tracking
-- Audio device testing can be done without specialized hardware
+### Hardware: Focusrite Scarlett 4i4
+**4 Input Channels:**
+- Ch1: Microphone audio
+- Ch2: Telemed/Ultrasound sync (TTL pulses)
+- Ch3: OptiTrack sync (TTL pulses)
+- Ch4: Unused - no signal connected
 
-### Version Control
-- Backup files maintained for major versions (`*_backup_*.mlapp`)
-- Compiled executables preserved for distribution
-- Clean separation between source and build artifacts via `.gitignore`
+**3 Output Channels (WAV):**
+- Ch1: Audio (from hardware Ch1)
+- Ch2: Telemed sync (from hardware Ch2)
+- Ch3: OptiTrack sync (from hardware Ch3)
 
-## Audio Sync Signal Architecture (NEW - January 2025)
-
-### Hardware Setup
-**Focusrite Scarlett 4i4** captures 4 input channels:
-- **Channel 1**: Microphone audio
-- **Channel 2**: Telemed/Ultrasound sync signal (hardware-generated pulse)
-- **Channel 3**: (unused)
-- **Channel 4**: OptiTrack sync signal (hardware-generated pulse)
-
-### Recording Configuration
-- **Input**: 4 channels via WASAPI driver (Windows DirectSound limited to 2 channels)
-- **Output**: 3 channels saved to WAV file
-  - Ch1: Audio (from hardware Ch1)
-  - Ch2: Telemed sync (from hardware Ch2)
-  - Ch3: OptiTrack sync (from hardware Ch4)
-
-### Sync Signal Processing
-- **Hardware sync generation**: Telemed and OptiTrack devices send TTL pulses to Focusrite inputs
-- **Recording**: All 4 channels captured via `audioDeviceReader` (WASAPI)
-- **Post-processing**: `TrimTelemedAudio()` analyzes Ch2 sync pulses via `findpeaks()` to detect frame timing
-- **Future**: OptiTrack sync processing can be added similarly using Ch3
-
-### Key Properties
-```matlab
-num_audio_channels = 4  % Record all 4 hardware channels
-which_channel_is_telemed_sync = 2    % Hardware input channel
-which_channel_is_optitrack_sync = 4  % Hardware input channel
-```
-
-### Implementation Files
-- `updates.md`: Initial 3-channel format changes
-- `updates_wasapi.md`: WASAPI driver enablement for 4-channel capture
-
-## Known Issues
-
-### NatNet SDK Path Issues in Standalone Build ✓ RESOLVED
-- **Problem**: OptiTrack NatNet SDK works correctly when running in MATLAB but fails to find DLL and related files when built as standalone executable
-- **Root Cause**: Path resolution issues for `NatNetML.dll` and deployment directory structure mismatch
-- **Solution**:
-  1. Use correct SDK path: `NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.dll` (not `Samples\bin\x64\`)
-  2. Account for deployment structure: `ctfroot\MewRecorder\` subfolder in standalone builds
-  3. Include required files in compilation: both `NatNetML.dll` and `NatNetML.xml`
-  4. Unblock downloaded DLL files to resolve security restrictions
-- **Implementation**: Updated `getNatNetDLLPath()` function to handle deployment vs development paths
-
-### Current Build Configuration
-- **Compilation Command**:
+### Implementation
+- **Driver**: ASIO via `audioDeviceReader` (Windows DirectSound and WASAPI limited to 2 channels)
+- **Device**: 'Focusrite USB ASIO' (provides full 4-channel access)
+- **Sync Processing**: `TrimTelemedAudio()` detects frame timing via `findpeaks()` on Ch2 pulses
+- **Code Properties**:
   ```matlab
-  mcc -m -W WinMain:MewRecorder -T link:exe 'MewRecorder.mlapp' ...
-    -a 'NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.dll' ...
-    -a 'NatNet_SDK_4.3\NatNetSDK\lib\x64\NatNetML.xml' ...
-    -a 'NatNet_SDK_4.3\NatNet_SDK_3.1\NatNetSDK\Samples\Matlab\natnet.p' ...
-    -d 'compiled_YYYYMMDD'
+  num_audio_channels = 4  % Record all 4 hardware channels
+  which_channel_is_telemed_sync = 2
+  which_channel_is_optitrack_sync = 3  % Changed from 4 to 3 (Oct 20, 2025)
   ```
-- **Deployment Structure**: Files placed under `ctfroot\MewRecorder\` in standalone builds
-- **Path Resolution**: Use `fullfile(ctfroot, 'MewRecorder', relDLL)` for deployed applications
+- **Reference**: See `session_logs/session_251020.md` for complete ASIO implementation details
+
+## Known Issues & Solutions
+
+### ✓ RESOLVED ISSUES
+
+**1. NatNet SDK Path Issues in Standalone Build** (Fixed: 2025-10-14)
+- **Problem**: OptiTrack SDK failed to load in compiled executable
+- **Solution**: Corrected DLL paths to `NatNet_SDK_4.3\NatNetSDK\lib\x64\` and included both `NatNetML.dll` + `NatNetLib.dll`
+- **Note**: Files deploy under `ctfroot\MewRecorder\` in standalone builds
+
+**2. Timer Display Delay on First Run** (Fixed: 2025-10-19)
+- **Problem**: Timer visualization lagged 5-7 seconds on initial recording
+- **Solution**: Replaced blocking loop with background timer (`UpdateRecordingDisplay()`)
+- **Implementation**: See `session_logs/fix_timer_delay.md`
+
+**3. WASAPI Only Exposes 2 Channels** (Fixed: 2025-10-20)
+- **Problem**: WASAPI driver only provided 2 channels from Focusrite 4i4
+- **Solution**: Switched to ASIO driver ('Focusrite USB ASIO') which provides all 4 channels
+- **Implementation**: See `session_logs/session_251020.md` (Issues 1-12)
+
+**4. OptiTrack Sync Wrong Hardware Channel** (Fixed: 2025-10-20)
+- **Problem**: OptiTrack hardware pulses connected to Input 3, code expected Input 4
+- **Solution**: Changed `which_channel_is_optitrack_sync` from 4 to 3, removed software sync generation
+- **Implementation**: See `session_logs/task_fix_optitrack_input3.md` (Issue 13)
+
+**5. App Freezes After OptiTrack Starts** (Fixed: 2025-10-20)
+- **Problem**: UI completely frozen during recording, Stop button unresponsive
+- **Solution**: Simplified blocking while loop, removed `drawnow` (background timers handle UI)
+- **Implementation**: See `session_logs/FIX_timer_and_duration.md` (Issue 14)
+
+**6. Timer Display and Duration Check Broken** (Fixed: 2025-10-20)
+- **Problem**: Timer frozen, record-by-duration runs forever, `recordStartTime` never set
+- **Solution**: Set `recordStartTime` before starting `recordingTimer`
+- **Implementation**: See `session_logs/FIX_timer_and_duration.md` (Issue 15)
+
+### ✅ CURRENT STATUS
+**All known issues resolved as of October 20, 2025**
+- ✅ Full 4-channel ASIO recording working
+- ✅ Timer display updates properly
+- ✅ UI stays responsive during recording
+- ✅ Stop button works without Ctrl+C
+- ✅ Record-by-duration feature works correctly
+- ✅ OptiTrack sync captured from correct hardware channel (Input 3)
+- ✅ All sync signals (Telemed Ch2, OptiTrack Ch3) recording correctly
+- ✅ 3-channel WAV output format verified
+- ✅ Multiple recording sessions work without restart
+- ✅ No crashes, freezes, or errors
+
+**Verified with full hardware setup**: Focusrite 4i4, Telemed EchoWave II, OptiTrack motion capture
 
 ### Development Workflow Constraints
 - **Remote Development**: Code changes must be manually transferred via Parsec remote desktop
 - **Hardware Dependencies**: Full testing requires physical lab setup with specialized hardware
 - **Platform Limitation**: Development and deployment restricted to Windows due to hardware dependencies
 
-## Current TODO (January 2025)
+## Future Enhancements
 
-### 🔴 HIGH PRIORITY - In Progress
-- [ ] **Apply WASAPI changes from `updates_wasapi.md`**
-  - Currently: Code written but not yet applied to MewRecorder.mlapp
-  - Reason: Enables true 4-channel recording from Focusrite 4i4
-  - Expected result: "Recording via WASAPI (4 ch)." message on recording start
-  - Files: See `updates_wasapi.md` for complete change list
+### Completed Improvements ✅
+- [x] **4-channel ASIO recording** (Oct 20, 2025)
+  - ✅ All audio lamps work (Ch1, Ch2, Ch3)
+  - ✅ Sync pulse detection validated in Ch2 and Ch3
+  - ✅ 3-channel WAV output format confirmed
 
-### 🟡 MEDIUM PRIORITY - Testing
-- [ ] **Test 4-channel WASAPI recording**
-  - Verify all 4 audio lamps light up (Ch1, Ch2, Ch4)
-  - Check saved WAV files have exactly 3 channels
-  - Validate Telemed sync (Ch2) contains pulses
-  - Validate OptiTrack sync (Ch3) contains pulses
-  - Run `audioread()` to inspect channel data
+- [x] **OptiTrack sync recording** (Oct 20, 2025)
+  - ✅ OptiTrack sync pulses recorded from hardware Ch3
+  - ✅ Saved to WAV Ch3 for post-processing
+  - ✅ Hardware TTL pulses (passive reception, no software generation needed)
 
-- [ ] **Test TrimTelemedAudio with new format**
-  - Confirm sync pulse detection works with Ch2
-  - Check frame timing calculation accuracy
-  - Verify trimmed audio aligns with ultrasound video
+### Pending Improvements
+- [ ] **OptiTrack sync post-processing**
+  - Implement `TrimOptiTrackData()` function
+  - Use Ch3 sync pulses for precise marker timestamping
+  - Align OptiTrack .mat files with video timing
 
-- [ ] **Test video conversion pipeline**
-  - Record sample with all modalities enabled
-  - Run "Convert TVD to Video" function
-  - Confirm MP4 output has synchronized audio
-
-### 🟢 LOW PRIORITY - Future Enhancements
-- [ ] **Add OptiTrack sync processing function**
-  - Create `TrimOptiTrackData()` similar to `TrimTelemedAudio()`
-  - Use Ch3 sync pulses to timestamp OptiTrack marker data
-  - Align OptiTrack .mat file with ultrasound video timing
-
-- [ ] **Add sync signal visualization**
+- [ ] **Sync signal visualization** (optional)
   - Real-time waveform display during recording
-  - Show pulse detection in GUI
-  - Help debug sync signal issues
+  - Visual pulse detection feedback in GUI
 
-- [ ] **Document WASAPI fallback behavior**
-  - What happens if WASAPI fails?
-  - How to troubleshoot driver issues?
-  - Alternative configurations for different audio interfaces
-
-### ⚠️ Known Limitations
-- **Windows DirectSound**: Only exposes 2 channels from Focusrite 4i4
-- **WASAPI Requirement**: Needs Audio Toolbox license
-- **Audio Device Name**: Must be set correctly for WASAPI to work
-- **Channel 3 Empty**: Hardware input Ch3 has no signal (intentional)
+- [ ] **Compile new version**
+  - Version: v1.3.3 or v1.4.0
+  - Build: compiled_251020v7
+  - Include all 16 fixes from session_251020.md

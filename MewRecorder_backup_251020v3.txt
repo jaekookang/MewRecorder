@@ -63,12 +63,7 @@ classdef MewRecorder < matlab.apps.AppBase
         audioExt = '.wav'; tvdExt = '.tvd';
         audio_dev_idx = 2; audio_dev_name ='';   % Default audio device = 0
         audio_srate = 44100;  num_audio_channels = 2;  audio_bit_rate = 16;
-        max_audio_sig_lamps = 4; % max # of lamps shown in the audio panel
-        audioDataIndex = 0; % Current write position in pre-allocated audioData
-        audioReader = [];           % audioDeviceReader object (ASIO/WASAPI)
-        audioData = [];             % Pre-allocated audio buffer
-        audioTimer = [];            % Timer for ASIO frame capture
-        useAudioDeviceReader = false;  % true = ASIO/WASAPI, false = audiorecorder
+        max_audio_sig_lamps = 3; % max # of lamps shown in the audio panel
         recordingTimer = []; timerPeriod = 0.070;
         save_file_prefix = ''; FullPathFilename = ''; AudioFullPathFilename = ''; TvdFullPathFilename = '';
         audioRecObj = []; asmcmd = []; EchoWavePath = []; EchoWaveCmd = [];
@@ -78,10 +73,15 @@ classdef MewRecorder < matlab.apps.AppBase
         % Hardware channel mapping (Focusrite 4-channel input):
         %   Channel 1: Microphone audio
         %   Channel 2: Telemed/Ultrasound sync signal
-        %   Channel 3: OptiTrack sync signal
-        %   Channel 4: (unused - no signal)
+        %   Channel 3: (unused - no signal)
+        %   Channel 4: OptiTrack sync signal
         which_channel_is_telemed_sync = 2;
         which_channel_is_optitrack_sync = 3;
+        audioReader      % audioDeviceReader handle (if used)
+        audioData        % buffered samples (for WASAPI)
+        audioTimer       % background timer (for WASAPI)
+        useAudioDeviceReader logical = false; % tracks which system is active
+
         %% Telemed ID:
         id_scanning_state_set = 201; id_scanning_state_get = 200;
         id_state_b_b1r = 1; % B-mode scan running
@@ -278,10 +278,10 @@ classdef MewRecorder < matlab.apps.AppBase
                     end
                 end
 
-                %-- Temporarily disabled for saving mat file (not useful)
-                % optitrack_data = app.optitrack_data; %#ok<NASGU>
-                % save(app.optitrack_filename, 'optitrack_data'); 
-                % app.logMessage(['OptiTrack data saved to ', app.optitrack_filename]);
+
+                optitrack_data = app.optitrack_data; %#ok<NASGU>
+                save(app.optitrack_filename, 'optitrack_data');
+                app.logMessage(['OptiTrack data saved to ', app.optitrack_filename]);
 
             end
         end
@@ -340,16 +340,6 @@ classdef MewRecorder < matlab.apps.AppBase
                 if app.Ck_RecordByDur.Value && dur > app.Ed_RecordDur.Value
                     app.isRecording = false;
                     app.Bn_Record.Value = false;
-                end
-
-                % Check memory every 60 seconds
-                if mod(dur, 60) < 0.2  % Every 60 seconds
-                    [~, memStats] = memory;
-                    availableGB = memStats.MemAvailableAllArrays / 1e9;
-                    if availableGB < 2
-                        app.logMessage(sprintf('⚠️ Critical: Only %.1f GB memory remaining!', availableGB), 'error');
-                        % Could auto-stop recording here if desired
-                    end
                 end
 
             catch ME
@@ -500,13 +490,9 @@ classdef MewRecorder < matlab.apps.AppBase
                     if ~isempty(app.audioReader) && isvalid(app.audioReader)
                         release(app.audioReader);
                     end
-                    % Trim pre-allocated buffer to actual captured size
-                    s = app.audioData(1:app.audioDataIndex, :);
+                    s = app.audioData;
 
-                    % Log capture statistics with buffer usage
-                    bufferUsage = round(100 * app.audioDataIndex / size(app.audioData,1));
-                    app.logMessage(sprintf('Captured %d samples from ASIO (%d%% buffer used)', ...
-                        size(s,1), bufferUsage), 'info');
+                    app.logMessage(sprintf('Captured %d samples from WASAPI', size(s,1)), 'info');
                 else
                     % Stop audiorecorder (fallback)
                     if isrecording(app.audioRecObj), stop(app.audioRecObj);end
@@ -598,14 +584,14 @@ classdef MewRecorder < matlab.apps.AppBase
                         fprintf(fid, 'Hardware Input Mapping:\n');
                         fprintf(fid, '  Input Ch1 -> Microphone/Audio\n');
                         fprintf(fid, '  Input Ch2 -> Telemed/Ultrasound sync signal\n');
-                        fprintf(fid, '  Input Ch3 -> OptiTrack sync signal\n');
-                        fprintf(fid, '  Input Ch4 -> (unused - no signal)\n\n');
+                        fprintf(fid, '  Input Ch3 -> (unused)\n');
+                        fprintf(fid, '  Input Ch4 -> OptiTrack sync signal\n\n');
 
                         fprintf(fid, 'WAV File Channel Mapping:\n');
                         fprintf(fid, '  Channel 1: Audio (from hardware Ch1)\n');
                         fprintf(fid, '  Channel 2: Telemed/Ultrasound sync (from hardware Ch2)\n');
                         if size(s_output, 2) >= 3
-                            fprintf(fid, '  Channel 3: OptiTrack sync (from hardware Ch3)\n');
+                            fprintf(fid, '  Channel 3: OptiTrack sync (from hardware Ch4)\n');
                         end
                     else
                         fprintf(fid, 'Audio Driver: audiorecorder (DirectSound/MME)\n');
@@ -954,23 +940,7 @@ classdef MewRecorder < matlab.apps.AppBase
             try
                 frame = app.audioReader();
                 if isempty(frame), return; end
-
-                % Write to pre-allocated buffer
-                frameSize = size(frame, 1);
-                writeStart = app.audioDataIndex + 1;
-                writeEnd = app.audioDataIndex + frameSize;
-
-                % Check if buffer is full
-                if writeEnd > size(app.audioData, 1)
-                    % Buffer full - expand by 30 seconds
-                    expandSamples = app.audio_srate * 30;
-                    app.audioData = [app.audioData; zeros(expandSamples, app.num_audio_channels)];
-                    app.logMessage('Audio buffer expanded (recording longer than expected)', 'info');
-                end
-
-                % Fast write to pre-allocated buffer
-                app.audioData(writeStart:writeEnd, :) = frame;
-                app.audioDataIndex = writeEnd;
+                app.audioData = [app.audioData; frame]; %#ok<AGROW>
 
                 % Optional: blink lamps for signal activity
                 n = size(frame, 2);
@@ -1266,45 +1236,14 @@ classdef MewRecorder < matlab.apps.AppBase
             audioRecordedSuccess = true;
             app.useAudioDeviceReader = false; % default
 
-            % Check available memory (with fallback for different MATLAB versions)
-            try
-                if ispc  % Windows
-                    [~, memStats] = memory;
-                    if isfield(memStats, 'MemAvailableAllArrays')
-                        availableGB = memStats.MemAvailableAllArrays / 1e9;
-                    elseif isfield(memStats, 'PhysicalMemory') && isfield(memStats.PhysicalMemory, 'Available')
-                        availableGB = memStats.PhysicalMemory.Available / 1e9;
-                    else
-                        % Fallback: assume sufficient memory
-                        availableGB = 20;  % Assume 20GB available (skip warning)
-                    end
-
-                    requiredGB = 10;  % Estimated for 60-min recording
-
-                    if availableGB < requiredGB
-                        app.logMessage(sprintf('⚠️ Low memory: %.1f GB available, %.1f GB recommended', ...
-                            availableGB, requiredGB), 'warning');
-                    else
-                        app.logMessage(sprintf('Memory check: %.1f GB available', availableGB), 'info');
-                    end
-                else
-                    % Non-Windows: skip memory check
-                    app.logMessage('Memory check skipped (non-Windows system)', 'info');
-                end
-            catch ME
-                % If memory check fails, just log and continue
-                app.logMessage(sprintf('Memory check failed: %s (continuing anyway)', ME.message), 'warning');
-            end
-
             try
                 % Check if Audio Toolbox is installed (not just licensed)
-                % addons = matlab.addons.installedAddons;
-                % hasAudioToolbox = any(strcmp(addons.Name, 'Audio Toolbox'));
-                if exist('audioDeviceReader','file')
+                addons = matlab.addons.installedAddons;
+                hasAudioToolbox = any(strcmp(addons.Name, 'Audio Toolbox'));
+                if hasAudioToolbox && exist('audioDeviceReader','file')
                     try
                         %import audioDeviceReader
                         app.num_audio_channels = 4;  % request up to 4 if hardware supports
-                        UpdateRefreshAudioStatus(app);  % Update lamp visibility for 4 channels
                         app.audioReader = audioDeviceReader( ...
                             'SampleRate', app.audio_srate, ...
                             'NumChannels', app.num_audio_channels, ...
@@ -1312,14 +1251,8 @@ classdef MewRecorder < matlab.apps.AppBase
                             'Device', 'Focusrite USB ASIO');
 
                         % Verify device can actually start
-                        % Verify device can actually start
                         frame = app.audioReader(); %#ok<NASGU>
-
-                        % Pre-allocate audio buffer (10 minutes max at 44.1kHz, 4 channels)
-                        maxDuration = 600;  % seconds
-                        preallocSamples = app.audio_srate * maxDuration;
-                        app.audioData = zeros(preallocSamples, app.num_audio_channels);
-                        app.audioDataIndex = 0;  % Reset write position
+                        app.audioData = [];
                         app.useAudioDeviceReader = true;
 
                         % Start background timer to accumulate frames
@@ -1328,21 +1261,12 @@ classdef MewRecorder < matlab.apps.AppBase
                             'Period',0.01, ... % 10ms - fast enough to catch all frames
                             'TimerFcn',@(~,~)captureAudioFrame(app));
                         start(app.audioTimer);
+                        app.recordStartTime = datetime('now');  % Set AFTER timer starts
 
-                        app.logMessage(sprintf('Recording via ASIO (%d ch).', ...
-                            app.num_audio_channels), 'info');
+                        app.logMessage(sprintf('Recording via ASIO (%d ch). Start time: %s', ...
+                            app.num_audio_channels, datestr(app.recordStartTime, 'HH:MM:SS.FFF')), 'info');
                     catch ME
                         % Failed: revert to audiorecorder
-                        % CRITICAL: Release audioReader to unlock ASIO device
-                        if ~isempty(app.audioReader) && isvalid(app.audioReader)
-                            try
-                                release(app.audioReader);
-                            catch
-                            end
-                        end
-                        app.audioReader = [];
-                        app.useAudioDeviceReader = false;
-
                         app.logMessage(sprintf('ASIO failed: %s - using audiorecorder fallback.', ME.message), 'warning');
                     end
                 end
@@ -1350,7 +1274,6 @@ classdef MewRecorder < matlab.apps.AppBase
                 % === Fallback if WASAPI not available ===
                 if ~app.useAudioDeviceReader
                     app.num_audio_channels = 2; % only stereo supported
-                    UpdateRefreshAudioStatus(app);  % Update lamp visibility for 2 channels
                     app.audioRecObj = audiorecorder(app.audio_srate, app.audio_bit_rate, app.num_audio_channels, app.audio_dev_idx);
                     record(app.audioRecObj);
                     pause(app.timerPeriod);
@@ -1404,19 +1327,15 @@ classdef MewRecorder < matlab.apps.AppBase
 
 
             %% Recording timer:
-            % Set start time BEFORE starting timer (required for UpdateRecordingDisplay)
-            app.recordStartTime = datetime('now');
-
             app.recordingTimer = timer('ExecutionMode', 'fixedRate', ...
                 'Period', app.timerPeriod, ...
                 'TimerFcn', @(~,~)UpdateRecordingDisplay(app));
             start(app.recordingTimer);
 
-            app.logMessage(sprintf('Start time: %s', datestr(app.recordStartTime, 'HH:MM:SS.FFF')), 'info');
-
             % Wait for recording to finish (controlled by Stop button or timeout)
+            % drawnow allows UI to stay responsive during recording
             while app.Bn_Record.Value && app.isRecording
-                pause(0.1);
+                pause(0.05);
             end
 
             % Stop background timer
@@ -1428,11 +1347,7 @@ classdef MewRecorder < matlab.apps.AppBase
 
             app.Bn_Stop.Enable = 'off';
 
-            % app.Lp_AudSig1.Color = app.noSignalColor;
-            % app.Lp_AudSig2.Color = app.noSignalColor;
-            % app.Lp_AudSig3.Color = app.noSignalColor;
-            % app.Lp_AudSig4.Color = app.noSignalColor;
-            
+            app.Lp_AudSig1.Color = app.noSignalColor; app.Lp_AudSig2.Color = app.noSignalColor;
             % Stop recording:
             if app.Ck_ifRecordTelemed.Value
                 app.asmcmd.ParamSet(app.id_scanning_state_set, app.id_state_b_b1f);  % Freeze
@@ -1483,23 +1398,7 @@ classdef MewRecorder < matlab.apps.AppBase
                         if isempty(frame)
                             break;  % No more frames
                         end
-                        % Write to pre-allocated buffer using indexed write
-                        frameSize = size(frame, 1);
-                        writeStart = app.audioDataIndex + 1;
-                        writeEnd = app.audioDataIndex + frameSize;
-
-                        % Check if buffer is full
-                        if writeEnd > size(app.audioData, 1)
-                            % Buffer full - expand by 30 seconds
-                            expandSamples = app.audio_srate * 30;
-                            app.audioData = [app.audioData; zeros(expandSamples, app.num_audio_channels)];
-                            app.logMessage('Audio buffer expanded during drain (recording longer than expected)', 'info');
-                        end
-
-                        % Fast write to pre-allocated buffer
-                        app.audioData(writeStart:writeEnd, :) = frame;
-                        app.audioDataIndex = writeEnd;
-
+                        app.audioData = [app.audioData; frame];
                         frames_drained = frames_drained + 1;
                     end
                     if frames_drained > 0
@@ -1509,12 +1408,6 @@ classdef MewRecorder < matlab.apps.AppBase
                     app.logMessage(sprintf('Error draining ASIO frames: %s', ME.message), 'warning');
                 end
             end
-
-            % Reset all audio signal lamps (AFTER audioTimer stopped)
-            app.Lp_AudSig1.Color = app.noSignalColor;
-            app.Lp_AudSig2.Color = app.noSignalColor;
-            app.Lp_AudSig3.Color = app.noSignalColor;
-            app.Lp_AudSig4.Color = app.noSignalColor;
 
             if audioRecordedSuccess
                 success = SaveAudio(app);
@@ -1551,122 +1444,106 @@ classdef MewRecorder < matlab.apps.AppBase
             app.Bn_Record.Value = false;
             app.recordStopTime = datetime('now');
 
-            % Stop and cleanup recording timer if running
-            if ~isempty(app.recordingTimer) && isvalid(app.recordingTimer)
-                try
-                    stop(app.recordingTimer);
-                    delete(app.recordingTimer);
-                    app.recordingTimer = [];
-                catch
-                    % Timer already stopped
-                end
-            end
-
-            % Turn off audio signal lamps
-            app.Lp_AudSig1.Color = app.noSignalColor;
-            app.Lp_AudSig2.Color = app.noSignalColor;
-
-            % Stop Telemed recording
-            if app.Ck_ifRecordTelemed.Value
-                app.asmcmd.ParamSet(app.id_scanning_state_set, app.id_state_b_b1f);  % Freeze
-            end
-
-            % Stop audio recording
-            audioRecordedSuccess = true;
-            try
-                if app.useAudioDeviceReader
-                    % ASIO/audioDeviceReader: cleanup happens in SaveAudio
-                else
-                    % audiorecorder: stop it here
-                    stop(app.audioRecObj);
-                end
-            catch
-                audioRecordedSuccess = false;
-            end
-
-            % Stop OptiTrack recording
-            if app.Ck_ifRecordOptitrack.Value
-                app.motiveTrigger.stop = datetime('now');
-                app.logMessage('🟢 Motive: stopRecord()');
-                try
-                    app.natnet_client.stopRecord();  % stop & save .tak
-                catch ME
-                    app.logMessage(sprintf('Failed to stop Motive recording: %s', ME.message), 'error');
-                end
-                StopOptiTrackRecording(app);
-            end
-
-            % CRITICAL: Stop audioTimer BEFORE SaveAudio check
-            if app.useAudioDeviceReader
-                if ~isempty(app.audioTimer) && isvalid(app.audioTimer)
-                    try
-                        stop(app.audioTimer);
-                        delete(app.audioTimer);
-                    catch
-                        % Already stopped
-                    end
-                end
-
-                % IMPORTANT: Drain any remaining frames from ASIO buffer
-                try
-                    frames_drained = 0;
-                    max_drain = 100;  % Safety limit
-                    while frames_drained < max_drain
-                        frame = app.audioReader();
-                        if isempty(frame)
-                            break;  % No more frames
-                        end
-                        % Write to pre-allocated buffer using indexed write
-                        frameSize = size(frame, 1);
-                        writeStart = app.audioDataIndex + 1;
-                        writeEnd = app.audioDataIndex + frameSize;
-
-                        % Check if buffer is full
-                        if writeEnd > size(app.audioData, 1)
-                            % Buffer full - expand by 30 seconds
-                            expandSamples = app.audio_srate * 30;
-                            app.audioData = [app.audioData; zeros(expandSamples, app.num_audio_channels)];
-                            app.logMessage('Audio buffer expanded during drain (recording longer than expected)', 'info');
-                        end
-
-                        % Fast write to pre-allocated buffer
-                        app.audioData(writeStart:writeEnd, :) = frame;
-                        app.audioDataIndex = writeEnd;
-
-                        frames_drained = frames_drained + 1;
-                    end
-                    if frames_drained > 0
-                        app.logMessage(sprintf('Drained %d remaining frames from ASIO buffer', frames_drained), 'info');
-                    end
-                catch ME
-                    app.logMessage(sprintf('Error draining ASIO frames: %s', ME.message), 'warning');
-                end
-            end
-
-            app.logMessage('Stopped');
-
-            % Save data files
-            if app.Ck_ifRecordTelemed.Value
-                EchoWaveStopAndSave(app);
-            end
-
-            if audioRecordedSuccess
-                success = SaveAudio(app);
-                if success
-                    if app.Ck_ifRecordTelemed.Value
-                        msg = 'success-US-audio';
-                    else
-                        msg = 'success-audio';
-                    end
-                else
-                    msg = 'write-audio-failed';
-                end
-            else
-                msg = 'audio-error';
-            end
-
-            app.logMessage(msg);
-            appSetStatus(app, 'ready');
+            % % Stop and cleanup recording timer if running
+            % if ~isempty(app.recordingTimer) && isvalid(app.recordingTimer)
+            %     try
+            %         stop(app.recordingTimer);
+            %         delete(app.recordingTimer);
+            %         app.recordingTimer = [];
+            %     catch
+            %         % Timer already stopped
+            %     end
+            % end
+            % 
+            % % Turn off audio signal lamps
+            % app.Lp_AudSig1.Color = app.noSignalColor;
+            % app.Lp_AudSig2.Color = app.noSignalColor;
+            % 
+            % % Stop Telemed recording
+            % if app.Ck_ifRecordTelemed.Value
+            %     app.asmcmd.ParamSet(app.id_scanning_state_set, app.id_state_b_b1f);  % Freeze
+            % end
+            % 
+            % % Stop audio recording
+            % audioRecordedSuccess = true;
+            % try
+            %     if app.useAudioDeviceReader
+            %         % ASIO/audioDeviceReader: cleanup happens in SaveAudio
+            %     else
+            %         % audiorecorder: stop it here
+            %         stop(app.audioRecObj);
+            %     end
+            % catch
+            %     audioRecordedSuccess = false;
+            % end
+            % 
+            % % Stop OptiTrack recording
+            % if app.Ck_ifRecordOptitrack.Value
+            %     app.motiveTrigger.stop = datetime('now');
+            %     app.logMessage('🟢 Motive: stopRecord()');
+            %     try
+            %         app.natnet_client.stopRecord();  % stop & save .tak
+            %     catch ME
+            %         app.logMessage(sprintf('Failed to stop Motive recording: %s', ME.message), 'error');
+            %     end
+            %     StopOptiTrackRecording(app);
+            % end
+            % 
+            % % CRITICAL: Stop audioTimer BEFORE SaveAudio check
+            % if app.useAudioDeviceReader
+            %     if ~isempty(app.audioTimer) && isvalid(app.audioTimer)
+            %         try
+            %             stop(app.audioTimer);
+            %             delete(app.audioTimer);
+            %         catch
+            %             % Already stopped
+            %         end
+            %     end
+            % 
+            %     % IMPORTANT: Drain any remaining frames from ASIO buffer
+            %     try
+            %         frames_drained = 0;
+            %         max_drain = 100;  % Safety limit
+            %         while frames_drained < max_drain
+            %             frame = app.audioReader();
+            %             if isempty(frame)
+            %                 break;  % No more frames
+            %             end
+            %             app.audioData = [app.audioData; frame];
+            %             frames_drained = frames_drained + 1;
+            %         end
+            %         if frames_drained > 0
+            %             app.logMessage(sprintf('Drained %d remaining frames from ASIO buffer', frames_drained), 'info');
+            %         end
+            %     catch ME
+            %         app.logMessage(sprintf('Error draining ASIO frames: %s', ME.message), 'warning');
+            %     end
+            % end
+            % 
+            % app.logMessage('Stopped');
+            % 
+            % % Save data files
+            % if app.Ck_ifRecordTelemed.Value
+            %     EchoWaveStopAndSave(app);
+            % end
+            % 
+            % if audioRecordedSuccess
+            %     success = SaveAudio(app);
+            %     if success
+            %         if app.Ck_ifRecordTelemed.Value
+            %             msg = 'success-US-audio';
+            %         else
+            %             msg = 'success-audio';
+            %         end
+            %     else
+            %         msg = 'write-audio-failed';
+            %     end
+            % else
+            %     msg = 'audio-error';
+            % end
+            % 
+            % app.logMessage(msg);
+            % appSetStatus(app, 'ready');
         end
 
         % Value changed function: Ck_AppendDate, Ck_AppendTime, 
