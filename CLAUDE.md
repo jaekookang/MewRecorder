@@ -15,8 +15,8 @@ MewRecorder is a MATLAB-based multimodal recording application for synchronized 
 - **3D motion tracking** via OptiTrack NatNet SDK
 
 **Current Version**: v1.3.2 (October 2025)
-**Latest Build**: compiled_251019v6
-**Latest Checkpoint**: MewRecorder_backup_251020v3 (Verified working - All 16 fixes applied)
+**Latest Build**: compiled_251026v8
+**Latest Checkpoint**: MewRecorder_backup_251026 (Verified working - All fixes from Oct 20 + Oct 26 sessions)
 
 ## Commands
 
@@ -180,8 +180,27 @@ mcc -m -W WinMain:MewRecorder -T link:exe 'MewRecorder.mlapp' ...
 - **Solution**: Set `recordStartTime` before starting `recordingTimer`
 - **Implementation**: See `session_logs/FIX_timer_and_duration.md` (Issue 15)
 
+**7. OptiTrack Checkbox Errors** (Fixed: 2025-10-26)
+- **Problem**: Intermittent errors when toggling "Record OptiTrack" checkbox
+- **Root Cause**: No error handling in `isMotiveRunning()`, invalid app object access during shutdown, incorrect tooltip text
+- **Solution**: Added try-catch blocks, app object validation, corrected tooltip from "Record Telemed" to "Record OptiTrack"
+- **Implementation**: See `session_logs/session_251026.md` (Task 2A)
+
+**8. Telemed Checkbox State Management** (Fixed: 2025-10-26)
+- **Problem**: Error when toggling "Record Telemed Ultrasound" after ASIO recording - "Audio device not compatible"
+- **Root Cause**: State inconsistency - `num_audio_channels = 4` after ASIO but `audio_dev_idx` points to 2-channel device
+- **Solution**: (1) Only call `initialize()` when enabling Telemed, not when disabling; (2) Reset `num_audio_channels` to 2 before validation
+- **Implementation**: See `session_logs/session_251026.md` (Task 2B)
+
+**9. Headphone Monitoring Configuration** (Resolved: 2025-10-26)
+- **Issue**: Experimenters couldn't hear subjects through headphones during recording
+- **Root Cause**: Focusrite Control 2 mixer had "Analogue 1" input fader muted
+- **Solution**: Hardware configuration - raise "Analogue 1" fader to -6 dB in Focusrite Control 2 mixer
+- **Note**: ASIO exclusive mode may disable output LED indicator (cosmetic only, monitoring still works)
+- **Implementation**: See `session_logs/session_251026.md` (Task 1)
+
 ### ✅ CURRENT STATUS
-**All known issues resolved as of October 20, 2025**
+**All known issues resolved as of October 26, 2025**
 - ✅ Full 4-channel ASIO recording working
 - ✅ Timer display updates properly
 - ✅ UI stays responsive during recording
@@ -191,6 +210,9 @@ mcc -m -W WinMain:MewRecorder -T link:exe 'MewRecorder.mlapp' ...
 - ✅ All sync signals (Telemed Ch2, OptiTrack Ch3) recording correctly
 - ✅ 3-channel WAV output format verified
 - ✅ Multiple recording sessions work without restart
+- ✅ Checkbox toggles work correctly (OptiTrack + Telemed)
+- ✅ State management fixed after ASIO recording
+- ✅ Headphone monitoring configured (Focusrite hardware)
 - ✅ No crashes, freezes, or errors
 
 **Verified with full hardware setup**: Focusrite 4i4, Telemed EchoWave II, OptiTrack motion capture
@@ -212,3 +234,14 @@ mcc -m -W WinMain:MewRecorder -T link:exe 'MewRecorder.mlapp' ...
   - ✅ OptiTrack sync pulses recorded from hardware Ch3
   - ✅ Saved to WAV Ch3 for post-processing
   - ✅ Hardware TTL pulses (passive reception, no software generation needed)
+
+- [x] **Checkbox error handling** (Oct 26, 2025)
+  - ✅ OptiTrack checkbox: Added error handling and validation
+  - ✅ Telemed checkbox: Fixed state management after ASIO recording
+  - ✅ Corrected tooltip text bug
+  - ✅ Graceful handling during app shutdown
+
+- [x] **Headphone monitoring setup** (Oct 26, 2025)
+  - ✅ Documented Focusrite Control 2 mixer configuration
+  - ✅ Hardware monitoring for experimenter-to-subject audio
+  - ✅ Zero-latency monitoring via hardware routing
