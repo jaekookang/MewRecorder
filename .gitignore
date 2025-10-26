@@ -23,6 +23,7 @@ work/
 tmp/
 matlabroot/
 mccExcludedFiles.log
+_test_output/
 
 # ===================================
 # MATLAB autosave and backup files
