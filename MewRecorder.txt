@@ -470,8 +470,17 @@ classdef MewRecorder < matlab.apps.AppBase
         %% ======= Check if Motive is Running =======
         function isRunning = isMotiveRunning(app)
             % Returns true if OptiTrack Motive process is running on Windows
-            [~, tasklist] = system('tasklist');
-            isRunning = contains(tasklist, 'Motive.exe', 'IgnoreCase', true);
+            isRunning = false;
+            try
+                [status, tasklist] = system('tasklist');
+                if status == 0  % Command succeeded
+                    isRunning = contains(tasklist, 'Motive.exe', 'IgnoreCase', true);
+                end
+            catch ME
+                % System call failed - assume Motive is not running
+                % Log error for debugging (optional)
+                % app.logMessage(sprintf('Error checking Motive status: %s', ME.message), 'warning');
+            end
         end
 
         %% Save Audio
@@ -1800,9 +1809,16 @@ classdef MewRecorder < matlab.apps.AppBase
         % Value changed function: Ck_ifRecordTelemed
         function Ck_ifRecordTelemedValueChanged(app, event)
             if app.isRecording, return;end
-            % initialize(app);
+
             value = app.Ck_ifRecordTelemed.Value;
             if value
+                % Reset audio channels to safe default before validation
+                % (After ASIO recording, num_audio_channels might be 4,
+                %  but the default device might only support 2)
+                if app.num_audio_channels > 2
+                    app.num_audio_channels = 2;
+                end
+
                 % Check Telemed EchoWave status when enabled
                 [success, msg] = DetectEchoWave(app);
                 if success
@@ -1814,12 +1830,13 @@ classdef MewRecorder < matlab.apps.AppBase
                 else
                     app.logMessage(['⚠️ Telemed EchoWave initialization failed: ', msg], 'error');
                 end
+
+                % Re-initialize when ENABLING Telemed recording
+                initialize(app);
             else
+                % When DISABLING, just log - no need to re-initialize
                 app.logMessage('Telemed ultrasound recording disabled.', 'info');
             end
-
-            % Continue with full initialization
-            initialize(app);
         end
 
         % Menu selected function: Mn_AudioSettings
@@ -1988,16 +2005,27 @@ classdef MewRecorder < matlab.apps.AppBase
 
         % Value changed function: Ck_ifRecordOptitrack
         function Ck_ifRecordOptitrackValueChanged(app, event)
-            value = app.Ck_ifRecordOptitrack.Value;
-            % Only check when user manually enables it
-            if value
-                if isMotiveRunning(app)
-                    app.logMessage('✅ Motive is running and ready for OptiTrack recording.', 'info');
+            % Validate app object is still valid
+            if ~isvalid(app) || ~isvalid(app.UIFigure)
+                return;
+            end
+
+            try
+                value = app.Ck_ifRecordOptitrack.Value;
+
+                % Only check when user manually enables it
+                if value
+                    if isMotiveRunning(app)
+                        app.logMessage('✅ Motive is running and ready for OptiTrack recording.', 'info');
+                    else
+                        app.logMessage('⚠️ Motive (OptiTrack) is NOT running. Please start Motive before recording.', 'warning');
+                    end
                 else
-                    app.logMessage('⚠️ Motive (OptiTrack) is NOT running. Please start Motive before recording.', 'warning');
+                    app.logMessage('OptiTrack recording disabled.', 'info');
                 end
-            else
-                app.logMessage('OptiTrack recording disabled.', 'info');
+            catch ME
+                % Silently ignore errors during app shutdown or UI updates
+                % This prevents crashes when checkbox is toggled during close
             end
         end
     end
