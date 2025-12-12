@@ -97,12 +97,10 @@ classdef MewRecorder < matlab.apps.AppBase
         optitrack_recording = false;
         optitrack_filename = '';
         motiveTrigger = struct('start', [], 'stop', []);  % timestamps for Motive TTL trigger events
-        %% Sync timing logging
-        sessionRecordingCounter = 0;  % Track recording number for sync logging
+
         %% colors:
-        hasSignalColor = [1, 0, 0];  % RED - active signal during recording
-        noSignalColor = [0, 0, 0];   % BLACK - off/disabled
-        readyColor = [0, 1, 0];      % GREEN - ready to record (checkbox enabled)
+        hasSignalColor = [1, 0, 0];
+        noSignalColor = [0, 0, 0];
     end
 
     methods (Access = private)
@@ -129,9 +127,6 @@ classdef MewRecorder < matlab.apps.AppBase
             if success
                 appSetStatus(app, 'ready');
                 app.logMessage(msg, 'info');
-
-                % Initialize LED indicators based on checkbox states
-                UpdateLEDIndicators(app);
             else
                 appSetStatus(app, 'inactive');
                 app.logMessage(msg, 'error');
@@ -139,30 +134,6 @@ classdef MewRecorder < matlab.apps.AppBase
             end
 
         end %initialize
-        function UpdateLEDIndicators(app)
-            % Update LED lamps to reflect current checkbox states
-            % Called at startup and after recording stops
-
-            % Ch1 (Audio): Green when ready (audio always used for recording)
-            app.Lp_AudSig1.Color = app.readyColor;
-
-            % Ch2 (Telemed): Green if checkbox enabled, black otherwise
-            if app.Ck_ifRecordTelemed.Value
-                app.Lp_AudSig2.Color = app.readyColor;
-            else
-                app.Lp_AudSig2.Color = app.noSignalColor;
-            end
-
-            % Ch3 (OptiTrack): Green if checkbox enabled, black otherwise
-            if app.Ck_ifRecordOptitrack.Value
-                app.Lp_AudSig3.Color = app.readyColor;
-            else
-                app.Lp_AudSig3.Color = app.noSignalColor;
-            end
-
-            % Ch4 (Unused): Always off
-            app.Lp_AudSig4.Color = app.noSignalColor;
-        end
         %%
         function [success, msg] = CheckOutputFolderAccess(app, folderPath)
             if nargin < 2 || isempty(folderPath), folderPath = app.OutputPath;end
@@ -344,14 +315,7 @@ classdef MewRecorder < matlab.apps.AppBase
 
                 s = S(end,:);
 
-                % Update audio signal lamps (real-time blinking)
-                % Reset all lamps to black first
-                app.Lp_AudSig1.Color = app.noSignalColor;
-                app.Lp_AudSig2.Color = app.noSignalColor;
-                app.Lp_AudSig3.Color = app.noSignalColor;
-                app.Lp_AudSig4.Color = app.noSignalColor;
-
-                % Turn on lamps with signal
+                % Update audio signal lamps
                 if s(1) ~= 0
                     app.Lp_AudSig1.Color = app.hasSignalColor;
                 end
@@ -361,61 +325,36 @@ classdef MewRecorder < matlab.apps.AppBase
                 if size(s, 2) > 2 && s(3) ~= 0
                     app.Lp_AudSig3.Color = app.hasSignalColor;
                 end
-                % Ch4: Only update if there's a checkbox for it (future feature)
-                %if size(s, 2) > 3 && app.Ck_ifRecordCh4.Value && s(4) ~= 0
-                %    app.Lp_AudSig4.Color = app.hasSignalColor;
-                %end
-
-                % Ch4 is unused - do NOT update it (keep black)
-                % Note: Even though ASIO records 4 channels, Input 4 has nothing connected
-                % Removed: if size(s, 2) > 3 && s(4) ~= 0 ...
+                if size(s, 2) > 3 && s(4) ~= 0
+                    app.Lp_AudSig4.Color = app.hasSignalColor;
+                end
 
                 % Check timeout conditions
                 if dur > app.maxTimeOut
                     app.logMessage('Max time out!', 'warning');
-                    Bn_StopPushed(app, []);  % Properly stop recording
-                    return;  % Exit timer callback
+                    app.isRecording = false;
+                    app.Bn_Record.Value = false;
                 end
 
                 % Check duration-based recording limit
                 if app.Ck_RecordByDur.Value && dur > app.Ed_RecordDur.Value
-                    app.logMessage(sprintf('Duration limit reached (%.1f seconds). Stopping recording...', dur), 'info');
-                    Bn_StopPushed(app, []);  % Properly stop recording
-                    return;  % Exit timer callback
+                    app.isRecording = false;
+                    app.Bn_Record.Value = false;
                 end
 
-                % Check memory every 60 seconds (at 60s, 120s, 180s, etc.)
-                % Use proper condition: Check if we're within first timer tick after each 60s mark
-                if floor(dur / 60) ~= floor((dur - app.timerPeriod) / 60)
-                    % Just crossed a 60-second boundary
-                    try
-                        if ispc  % Windows
-                            [~, memStats] = memory;
-                            if isfield(memStats, 'MemAvailableAllArrays')
-                                availableGB = memStats.MemAvailableAllArrays / 1e9;
-                            elseif isfield(memStats, 'PhysicalMemory') && isfield(memStats.PhysicalMemory, 'Available')
-                                availableGB = memStats.PhysicalMemory.Available / 1e9;
-                            else
-                                availableGB = 20;  % Fallback: assume sufficient memory
-                            end
-                        else
-                            availableGB = 20;  % Non-Windows fallback
-                        end
-
-                        if availableGB < 2
-                            app.logMessage(sprintf('⚠️ Critical: Only %.1f GB memory remaining!', availableGB), 'error');
-                            % Could auto-stop recording here if desired
-                        end
-                    catch
-                        % Silently ignore memory check errors (non-critical)
+                % Check memory every 60 seconds
+                if mod(dur, 60) < 0.2  % Every 60 seconds
+                    [~, memStats] = memory;
+                    availableGB = memStats.MemAvailableAllArrays / 1e9;
+                    if availableGB < 2
+                        app.logMessage(sprintf('⚠️ Critical: Only %.1f GB memory remaining!', availableGB), 'error');
+                        % Could auto-stop recording here if desired
                     end
                 end
 
             catch ME
                 % Silently handle transient errors during recording
                 % (e.g., audio buffer not ready yet)
-                % This helps catch bugs like non-existent property references
-                app.logMessage(sprintf('⚠️ UpdateRecordingDisplay error: %s', ME.message), 'warning');
             end
         end
         function cleanupAndClose(app)
@@ -546,6 +485,15 @@ classdef MewRecorder < matlab.apps.AppBase
 
         %% Save Audio
         function success = SaveAudio(app)
+            % success = false;
+            % try
+            %     if isrecording(app.audioRecObj), stop(app.audioRecObj);end
+            %     s = getaudiodata(app.audioRecObj);
+            %     delete(app.audioRecObj);
+            % catch
+            %     delete(app.audioRecObj);
+            % end
+            % nChannels = size(s, 2);
             success = false;
             try
                 if app.useAudioDeviceReader
@@ -608,32 +556,19 @@ classdef MewRecorder < matlab.apps.AppBase
             %     end
             % end
 
-            % Remap channels based on what was recorded
+            % Remap 4-channel input to 3-channel output:
+            % Remap 4-channel input to 3-channel output:
             % Input:  Ch1=Audio, Ch2=Telemed sync, Ch3=OptiTrack sync, Ch4=(unused)
-            % Output: Ch1=Audio, Ch2=Telemed sync, [Ch3=OptiTrack sync if enabled]
+            % Output: Ch1=Audio, Ch2=Telemed sync, Ch3=OptiTrack sync
             if nChannels >= 4
-                % Check if OptiTrack was recorded
-                if app.Ck_ifRecordOptitrack.Value
-                    % Include OptiTrack sync channel (3-channel output)
-                    s_output = [s(:,1), s(:,app.which_channel_is_telemed_sync), s(:,app.which_channel_is_optitrack_sync)];
-                    app.logMessage(sprintf('Remapped %d channels to 3-channel output (Audio, Telemed sync, OptiTrack sync)', nChannels), 'info');
-                else
-                    % OptiTrack not recorded, save only 2 channels
-                    s_output = [s(:,1), s(:,app.which_channel_is_telemed_sync)];
-                    app.logMessage(sprintf('Remapped %d channels to 2-channel output (Audio, Telemed sync)', nChannels), 'info');
-                end
+                s_output = [s(:,1), s(:,app.which_channel_is_telemed_sync), s(:,app.which_channel_is_optitrack_sync)];
+                app.logMessage(sprintf('Remapped %d channels to 3-channel output (Audio, Telemed sync, OptiTrack sync)', nChannels), 'info');
                 app.logMessage(sprintf('Raw ASIO data - Ch1 RMS: %.4f, Ch2 RMS: %.4f, Ch3 RMS: %.4f, Ch4 RMS: %.4f', ...
-                    rms(s(:,1)), rms(s(:,2)), rms(s(:,3)), rms(s(:,4))), 'info');
+        rms(s(:,1)), rms(s(:,2)), rms(s(:,3)), rms(s(:,4))), 'info');
             elseif nChannels >= 3
-                % Fallback: if only 3 channels available
-                if app.Ck_ifRecordOptitrack.Value
-                    s_output = [s(:,1), s(:,app.which_channel_is_telemed_sync), zeros(size(s,1),1)];
-                    app.logMessage(sprintf('Warning: Only %d channels recorded. OptiTrack sync channel will be silent.', nChannels), 'warning');
-                else
-                    % No OptiTrack, save 2 channels
-                    s_output = [s(:,1), s(:,app.which_channel_is_telemed_sync)];
-                    app.logMessage(sprintf('Saved %d channels (Audio, Telemed sync)', nChannels), 'info');
-                end
+                % Fallback: if only 3 channels available, assume Ch3 is Telemed sync
+                s_output = [s(:,1), s(:,app.which_channel_is_telemed_sync), zeros(size(s,1),1)];
+                app.logMessage(sprintf('Warning: Only %d channels recorded. OptiTrack sync channel will be silent.', nChannels), 'warning');
             else
                 % Fallback: save as-is if fewer than 3 channels
                 s_output = s;
@@ -823,118 +758,6 @@ classdef MewRecorder < matlab.apps.AppBase
             % app.Msg1.HTMLSource = sprintf('%s <p> %s <br>File saved. </p>', app.Msg1.HTMLSource, fn);
             app.logMessage(sprintf('%s File saved.', fn), 'info');
         end % do_log
-        %% Sync timing logger (for audio-video alignment verification)
-        function LogSyncTiming(app, filename, frameStart, sampleRate, locs, status)
-            % Log sync timing data for video-audio alignment verification
-            % Creates individual _sync.txt log file for each recording
-            % Includes OptiTrack sync pulse detection from Ch3
-            if nargin < 6, status = 'success'; end
-            [filepath, baseFilename, ~] = fileparts(filename);
-
-            % Create log filename: recording_001.wav → recording_001_sync.txt
-            logFilename = [baseFilename, '_sync.txt'];
-            logPath = fullfile(app.OutputPath, logFilename);
-
-            % Calculate Telemed metrics (Ch2)
-            numPulses = length(locs);
-            if numPulses >= 2
-                firstPulse = locs(1);
-                frameDuration = median(diff(locs(2:end)));
-                estimatedFPS = 1 / frameDuration;
-            else
-                firstPulse = NaN;
-                frameDuration = NaN;
-                estimatedFPS = NaN;
-            end
-
-            % Detect OptiTrack sync pulse (Ch3)
-            try
-                [wav, sr] = audioread(filename);
-                if size(wav, 2) >= 3
-                    ch3 = abs(wav(:, 3));
-                    [~, ot_locs] = findpeaks(ch3, sr, 'MinPeakHeight', 0.3, 'NPeaks', 2, 'SortStr', 'descend');
-                    if ~isempty(ot_locs)
-                        optitrackStart = min(ot_locs);  % First pulse = recording start
-                        videoToOTOffset = frameStart - optitrackStart;
-                        optitrackDetected = true;
-                    else
-                        optitrackStart = NaN;
-                        videoToOTOffset = NaN;
-                        optitrackDetected = false;
-                    end
-                else
-                    optitrackStart = NaN;
-                    videoToOTOffset = NaN;
-                    optitrackDetected = false;
-                end
-            catch
-                optitrackStart = NaN;
-                videoToOTOffset = NaN;
-                optitrackDetected = false;
-            end
-
-            % Write log file (TXT format, human-readable)
-            try
-                fid = fopen(logPath, 'wt');
-                if fid > 0
-                    fprintf(fid, '=====================================================\n');
-                    fprintf(fid, 'MewRecorder - Audio-Video Synchronization Log\n');
-                    fprintf(fid, '=====================================================\n\n');
-
-                    fprintf(fid, 'Recording File: %s\n', baseFilename);
-                    fprintf(fid, 'Conversion Date: %s\n', datestr(now, 'yyyy-mm-dd HH:MM:SS'));
-                    fprintf(fid, 'Session Run #: %d\n', app.sessionRecordingCounter);
-                    fprintf(fid, 'Status: %s\n\n', upper(status));
-
-                    fprintf(fid, '--- Video Sync Offset ---\n');
-                    fprintf(fid, 'frameStart (video offset): %.6f seconds\n', frameStart);
-                    fprintf(fid, '  -> This offset was applied to FFmpeg for A/V sync\n\n');
-
-                    fprintf(fid, '--- Telemed Ultrasound Sync (Ch2) ---\n');
-                    fprintf(fid, 'Number of sync pulses detected: %d\n', numPulses);
-                    if ~isnan(firstPulse)
-                        fprintf(fid, 'First pulse detected at: %.6f seconds\n', firstPulse);
-                        fprintf(fid, 'Frame duration (median): %.6f seconds\n', frameDuration);
-                        fprintf(fid, 'Estimated frame rate: %.2f fps\n', estimatedFPS);
-                    else
-                        fprintf(fid, 'WARNING: No Telemed sync pulses detected!\n');
-                    end
-                    fprintf(fid, '\n');
-
-                    fprintf(fid, '--- OptiTrack Motion Capture Sync (Ch3) ---\n');
-                    if optitrackDetected
-                        fprintf(fid, 'OptiTrack start pulse detected at: %.6f seconds\n', optitrackStart);
-                        fprintf(fid, 'Video-to-OptiTrack offset: %.6f seconds\n', videoToOTOffset);
-                        fprintf(fid, '  -> Use this offset for head movement correction\n');
-                        fprintf(fid, '  -> Formula: optitrack_time = video_time + %.6f\n', videoToOTOffset);
-                    else
-                        fprintf(fid, 'No OptiTrack sync pulses detected (Ch3 silent or not recorded)\n');
-                    end
-                    fprintf(fid, '\n');
-
-                    fprintf(fid, '--- Audio Settings ---\n');
-                    fprintf(fid, 'Sample Rate: %d Hz\n', sampleRate);
-                    fprintf(fid, '\n');
-
-                    fprintf(fid, '=====================================================\n');
-                    fprintf(fid, 'For analysis, use frameStart to align video with audio.\n');
-                    fprintf(fid, 'For motion correction, use Video-to-OptiTrack offset.\n');
-                    fprintf(fid, '=====================================================\n');
-
-                    fclose(fid);
-
-                    if optitrackDetected
-                        app.logMessage(sprintf('Sync log saved: %s (frameStart=%.3fs, OT offset=%.3fs)', ...
-                            logFilename, frameStart, videoToOTOffset), 'info');
-                    else
-                        app.logMessage(sprintf('Sync log saved: %s (frameStart=%.3fs)', ...
-                            logFilename, frameStart), 'info');
-                    end
-                end
-            catch ME
-                app.logMessage(sprintf('Warning: Failed to write sync log: %s', ME.message), 'warning');
-            end
-        end
         %% another log function for the app
         function logMessage(app, msg, type)
             if nargin < 3 || isempty(type)
@@ -1118,26 +941,13 @@ classdef MewRecorder < matlab.apps.AppBase
         function UpdateRefreshAudioStatus(app)
             app.Lb_AudioSettings.Text = ...
                 sprintf('[%d kHz; %d channel(s)]', round(app.audio_srate/1000), app.num_audio_channels);
-            % LED visibility: Only show LEDs for enabled features
-            % Ch1: Always visible (audio always enabled)
-            app.Lp_AudSig1.Visible = 'on';
-
-            % Ch2: Only visible if Telemed checkbox is checked
-            if app.Ck_ifRecordTelemed.Value
-                app.Lp_AudSig2.Visible = 'on';
-            else
-                app.Lp_AudSig2.Visible = 'off';
+            for i = 1:app.max_audio_sig_lamps
+                if app.num_audio_channels >= i
+                    app.("Lp_AudSig" + num2str(i)).Visible = 'on';
+                else
+                    app.("Lp_AudSig" + num2str(i)).Visible = 'off';
+                end
             end
-
-            % Ch3: Only visible if OptiTrack checkbox is checked
-            if app.Ck_ifRecordOptitrack.Value
-                app.Lp_AudSig3.Visible = 'on';
-            else
-                app.Lp_AudSig3.Visible = 'off';
-            end
-
-            % Ch4: Never visible (no checkbox, unused)
-            app.Lp_AudSig4.Visible = 'off';
         end %UpdateRefreshAudioStatus
         %%
         function toggleEchoWaveFunctions(app, toState)
@@ -1329,8 +1139,6 @@ classdef MewRecorder < matlab.apps.AppBase
                 opt.pixel_format char {mustBeText}  = '-pix_fmt yuv420p'
                 opt.ifUseShortest logical = false % if true, the video and audio will be trimmed to whichever is the shortest.
                 opt.ffmpegPath char {mustBeText} = ''
-                opt.videoOffset double = 0  % Video offset in seconds (for sync correction)
-                opt.fps double = 60  % Target output frame rate (default 100 fps for high-speed ultrasound)
             end
             if ~exist(input_video_filename, 'file'), fprintf('Cannot find: %s\n', input_video_filename); return; end
             if ~exist(input_audio_filename, 'file'), fprintf('Cannot find: %s\n', input_audio_filename); return; end
@@ -1344,17 +1152,9 @@ classdef MewRecorder < matlab.apps.AppBase
             %%
             aFn = input_audio_filename; vFn = input_video_filename;
             outFn = output_video_filename;
-            % Build FPS enforcement flags
-            % Use both -vf fps and -r for maximum compatibility
-            % -vf fps=60 ensures frame resampling
-            % -r 60 sets output frame rate metadata
-            % -vsync cfr forces constant frame rate mode
-            fpsFilter = sprintf('-vf fps=%.2f', opt.fps);
-            fpsRate = sprintf('-r %.2f', opt.fps);
-
             command = sprintf(...
-                '%s -itsoffset %.3f -i "%s" -i "%s" -map 0:v -map 1:a %s %s -vsync cfr %s %s %s %s %s -strict -2 %s -y "%s"', ...
-                ffmpegExe, opt.videoOffset, vFn, aFn, fpsFilter, fpsRate, opt.vcodec, opt.pixel_format, opt.preset, opt.crf, opt.acodec, useShortest, outFn);
+                '%s -i "%s" -i "%s" -map 0:v -map 1:a %s %s %s %s %s -strict -2 %s -y "%s"', ...
+                ffmpegExe, vFn, aFn, opt.vcodec, opt.pixel_format, opt.preset, opt.crf, opt.acodec, useShortest, outFn);
             % tic
             [status,cmdout] = system(command,'-echo');
             % toc
@@ -1456,7 +1256,7 @@ classdef MewRecorder < matlab.apps.AppBase
             % DO NOT clear app.Msg1.HTMLSource anymore
             app.logMessage('----------------------------', 'info');
             app.logMessage('New recording session started', 'info');
-            app.sessionRecordingCounter = app.sessionRecordingCounter + 1;
+
 
             if app.isRecording, return; end
             app.isRecording = true;
@@ -1720,8 +1520,10 @@ classdef MewRecorder < matlab.apps.AppBase
             end
 
             % Reset all audio signal lamps (AFTER audioTimer stopped)
-            % Use centralized function to restore LED states
-            UpdateLEDIndicators(app);
+            app.Lp_AudSig1.Color = app.noSignalColor;
+            app.Lp_AudSig2.Color = app.noSignalColor;
+            app.Lp_AudSig3.Color = app.noSignalColor;
+            app.Lp_AudSig4.Color = app.noSignalColor;
 
             if audioRecordedSuccess
                 success = SaveAudio(app);
@@ -2031,17 +1833,9 @@ classdef MewRecorder < matlab.apps.AppBase
 
                 % Re-initialize when ENABLING Telemed recording
                 initialize(app);
-
-                % Turn on Ch2 LED (green) to show Telemed is ready
-                app.Lp_AudSig2.Color = app.readyColor;
-                app.Lp_AudSig2.Visible = 'on';  % Show when enabled
             else
                 % When DISABLING, just log - no need to re-initialize
                 app.logMessage('Telemed ultrasound recording disabled.', 'info');
-
-                % Turn off Ch2 LED and hide it
-                app.Lp_AudSig2.Color = app.noSignalColor;
-                app.Lp_AudSig2.Visible = 'off';  %// Always hide when disabled
             end
         end
 
@@ -2131,47 +1925,22 @@ classdef MewRecorder < matlab.apps.AppBase
                 outVideoFN = fullfile(app.OutputPath, [fn '.' 'mp4']);
                 [status,msg] = copyfile(tvdFN, tmpTvdFN);
                 info = EchoWaveGetTVDinfo(app,tmpTvdFN);
-                if ~isempty(info) && isfield(info, 'fps') && info.fps > 0
-                    detected_fps = info.fps;  % Use for TrimTelemedAudio sync detection
-                else
-                    detected_fps = [];
-                end
-
-                % ALWAYS output at constant 60 fps (optimal balance of quality and compatibility)
-                target_fps = 60;
-
+                if ~isempty(info) && isfield(info, 'fps') && info.fps > 0, fps = info.fps; else, fps = [];  end
                 ConvertTVDtoVideo(app, tmpPath, toFormat);
 
                 if exist(audioFN, 'file')
                     % Note: In the 3-channel output WAV, Telemed sync is channel 2 (not hardware channel 3)
                     sync_channel = 2;  % Ch2 = Telemed sync in the saved 3-channel WAV file
                     trimmedAudioFN = fullfile(app.OutputPath, [fn '.flac']);
-
-                    % Trim audio and log sync timing
-                    try
-                        [sig, sr, locs, frameStart] = app.TrimTelemedAudio(audioFN, [], trimmedAudioFN, detected_fps, sync_channel);
-
-                        % Log sync timing (includes OptiTrack Ch3 detection)
-                        if ~isempty(locs) && length(locs) >= 2
-                            app.LogSyncTiming(audioFN, frameStart, sr, locs, 'success');
-                        else
-                            app.LogSyncTiming(audioFN, NaN, sr, [], 'no_sync_pulses');
-                        end
-                    catch ME
-                        app.LogSyncTiming(audioFN, NaN, 0, [], 'trim_failed');
-                        frameStart = 0;  % Fallback to no offset
-                    end
+                    [sig, sr, locs, frameStart] = app.TrimTelemedAudio(audioFN, [], trimmedAudioFN, fps, sync_channel);
 
                     if app.ffmpegFound
-                        % Force constant fps output, stop at end of trimmed audio (shortest stream)
-                        [status,cmdout] = app.ffmpegCombineVideoAudio(tmpVideoFN, trimmedAudioFN, outVideoFN, ...
-                            videoOffset=frameStart, fps=target_fps, ifUseShortest=true);
+                        [status,cmdout] = app.ffmpegCombineVideoAudio(tmpVideoFN, trimmedAudioFN, outVideoFN);
                     else
                         [status,msg] = copyfile(tmpVideoFN, outVideoFN);
                     end
                 else
                     % No audio. TVD only
-                    % Note: ffmpegConvertOneFile_simple does not fix FPS - consider updating separately if needed
                     if app.ffmpegFound
                         [status,cmdout] = app.ffmpegConvertOneFile_simple(tmpVideoFN, outVideoFN);
                     else
@@ -2251,16 +2020,8 @@ classdef MewRecorder < matlab.apps.AppBase
                     else
                         app.logMessage('⚠️ Motive (OptiTrack) is NOT running. Please start Motive before recording.', 'warning');
                     end
-
-                    % Turn on Ch3 LED (green) to show OptiTrack is ready
-                    app.Lp_AudSig3.Color = app.readyColor;
-                    app.Lp_AudSig3.Visible = 'on';  %// Show when enabled
                 else
                     app.logMessage('OptiTrack recording disabled.', 'info');
-
-                    % Turn off Ch3 LED and hide it
-                    app.Lp_AudSig3.Color = app.noSignalColor;
-                    app.Lp_AudSig3.Visible = 'off';  %// Always hide when disabled
                 end
             catch ME
                 % Silently ignore errors during app shutdown or UI updates
